@@ -1,0 +1,60 @@
+<Window x:Class="Assistente.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Assistente"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI"
+        FontSize="13"
+        UseLayoutRounding="True"
+        MouseEnter="Window_MouseEnter"
+        MouseLeave="Window_MouseLeave">
+    <Grid>
+        <!-- Estado recolhido: uma "alça" fina na borda da tela -->
+        <Border x:Name="CollapsedHandle"
+                Background="{StaticResource AccentBrush}"
+                CornerRadius="8,0,0,8"
+                Cursor="Hand"
+                ToolTip="Assistente">
+            <TextBlock x:Name="HandleIcon" Text="&#xE700;" FontFamily="{StaticResource IconFont}" FontSize="10"
+                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+
+        <!-- Estado expandido: painel com as ferramentas -->
+        <Border x:Name="ExpandedPanel"
+                Visibility="Collapsed"
+                Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1,1,0,1"
+                CornerRadius="12,0,0,12">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Height="44" Margin="14,0,6,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="16"
+                                   Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBlock Text="Assistente" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button x:Name="PinButton" Style="{StaticResource IconButton}" Content="&#xE718;"
+                                ToolTip="Fixar aberto" Click="PinButton_Click" />
+                        <Button Style="{StaticResource IconButton}" Content="&#xE921;"
+                                ToolTip="Recolher" Click="CollapseButton_Click" />
+                    </StackPanel>
+                </Grid>
+
+                <Border DockPanel.Dock="Left" Width="170" Background="{StaticResource SidebarBrush}"
+                        CornerRadius="0,8,0,0" Padding="0,6">
+                    <ListBox x:Name="ToolList" SelectionChanged="ToolList_SelectionChanged" />
+                </Border>
+
+                <ContentControl x:Name="ToolHost" Margin="16,8,16,14" Focusable="False" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

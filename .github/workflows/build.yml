@@ -1,0 +1,57 @@
+name: build
+
+# Push em main: compila e testa.
+# Tag "v1.2.3": compila as duas versões e publica a release que o app usa para se atualizar.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Testes
+        run: dotnet test tests/Assistente.Core.Tests -c Release
+
+      - name: Versão
+        id: ver
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Publicar (completo e leve)
+        shell: pwsh
+        run: |
+          $common = @('src/Assistente.App/Assistente.App.csproj', '-c', 'Release', '-r', 'win-x64',
+                      '-p:PublishSingleFile=true', '-p:DebugType=none',
+                      "-p:Version=${{ steps.ver.outputs.version }}",
+                      "-p:UpdateRepository=${{ github.repository }}")
+          dotnet publish @common --self-contained true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o out/full
+          dotnet publish @common --self-contained false -o out/light
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item out/full/Assistente.exe release/Assistente.exe
+          Copy-Item out/light/Assistente.exe release/Assistente-leve.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Assistente
+          path: release/*.exe
+
+      - name: Criar release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release/Assistente.exe release/Assistente-leve.exe --title "Assistente ${{ github.ref_name }}" --generate-notes

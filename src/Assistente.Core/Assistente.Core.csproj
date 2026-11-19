@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Lógica pura (sem dependência de Windows/WPF): fácil de testar e reaproveitar. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Assistente.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>

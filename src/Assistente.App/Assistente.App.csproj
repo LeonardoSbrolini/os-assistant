@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Usado apenas para o ícone na bandeja do sistema (NotifyIcon). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>Assistente.App</RootNamespace>
+    <AssemblyName>Assistente</AssemblyName>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>0.3.0</Version>
+    <Product>Assistente</Product>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Informa ao atualizador qual arquivo baixar (completo ou leve). -->
+    <AssemblyMetadata Include="SelfContained" Value="$(SelfContained)" />
+    <!-- Repositório do GitHub de onde vêm as atualizações (dono/nome). -->
+    <AssemblyMetadata Include="UpdateRepository" Value="$(UpdateRepository)" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <UpdateRepository Condition="'$(UpdateRepository)' == ''">LeonardoSbrolini/os-assistant</UpdateRepository>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Assistente.Core\Assistente.Core.csproj" />
+  </ItemGroup>
+
+</Project>
