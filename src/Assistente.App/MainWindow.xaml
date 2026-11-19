@@ -18,7 +18,7 @@
     <Grid>
         <!-- Estado recolhido: uma "alça" fina na borda da tela -->
         <Border x:Name="CollapsedHandle"
-                Background="{StaticResource AccentBrush}"
+                Background="{DynamicResource AccentBrush}"
                 CornerRadius="8,0,0,8"
                 Cursor="Hand"
                 ToolTip="Assistente">
@@ -36,33 +36,33 @@
         <Border x:Name="ExpandedPanel"
                 Visibility="Collapsed"
                 RenderTransformOrigin="0.5,0"
-                Background="{StaticResource PanelBrush}"
+                Background="{DynamicResource PanelBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1,1,0,1"
                 CornerRadius="12,0,0,12">
             <DockPanel>
-                <Grid DockPanel.Dock="Top" Height="44" Margin="14,0,6,0">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource IconFont}" FontSize="16"
-                                   Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <TextBlock Text="Assistente" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button x:Name="PinButton" Style="{StaticResource IconButton}" Content="&#xE718;"
-                                ToolTip="Fixar aberto" Click="PinButton_Click" />
-                        <Button Style="{StaticResource IconButton}" Content="&#xE921;"
-                                ToolTip="Recolher" Click="CollapseButton_Click" />
-                    </StackPanel>
-                </Grid>
-
-                <Border DockPanel.Dock="Left" Width="170" Background="{StaticResource SidebarBrush}"
-                        CornerRadius="0,8,0,0" Padding="0,6">
-                    <ListBox x:Name="ToolList" SelectionChanged="ToolList_SelectionChanged"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.CanContentScroll="False" />
+                <!-- Barra lateral: ferramentas + ações no rodapé (sem cabeçalho) -->
+                <Border DockPanel.Dock="Left" Width="180" Background="{StaticResource SidebarBrush}"
+                        CornerRadius="0,0,0,12" x:Name="Sidebar">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,1,0,0"
+                                Padding="6,4">
+                            <UniformGrid Columns="3">
+                                <Button x:Name="PinButton" Style="{StaticResource IconButton}" Content="&#xE718;"
+                                        ToolTip="Fixar aberto" Click="PinButton_Click" />
+                                <Button Style="{StaticResource IconButton}" Content="&#xE713;"
+                                        ToolTip="Configurações" Click="SettingsButton_Click" />
+                                <Button Style="{StaticResource IconButton}" Content="&#xE921;"
+                                        ToolTip="Recolher" Click="CollapseButton_Click" />
+                            </UniformGrid>
+                        </Border>
+                        <ListBox x:Name="ToolList" SelectionChanged="ToolList_SelectionChanged" Padding="0,8,0,4"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.CanContentScroll="False" />
+                    </DockPanel>
                 </Border>
 
-                <ContentControl x:Name="ToolHost" Margin="16,8,16,14" Focusable="False" />
+                <ContentControl x:Name="ToolHost" Margin="18,14,14,12" Focusable="False" ClipToBounds="True" />
             </DockPanel>
         </Border>
     </Grid>

@@ -18,7 +18,7 @@ public sealed class ProcessesTool : ITool
     public string Name => "Processos";
     public string Category => "Sistema";
     public string Glyph => "";
-    public int Order => 1;
+    public int Order => 2;
     public FrameworkElement CreateView() => new ProcessesView();
 }
 

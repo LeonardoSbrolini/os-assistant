@@ -24,14 +24,8 @@ public partial class MainWindow : Window
     /// <summary>Espessura e comprimento da alça recolhida.</summary>
     private const double HandleThickness = 10;
     private const double HandleLength = 120;
-    private const double PanelWidth = 640;
-    private const double PanelHeight = 680;
-
-    /// <summary>O painel nunca passa de 40% da largura nem da altura da tela.</summary>
-    private const double MaxScreenFraction = 0.4;
-
-    private static readonly Duration AnimationDuration = new(TimeSpan.FromMilliseconds(180));
-    private static readonly IEasingFunction Ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+    private const double MinPanelWidth = 520;
+    private const double MinPanelHeight = 360;
 
     /// <summary>Enquanto maior que zero, o painel não recolhe (ex.: diálogo de confirmação aberto).</summary>
     public static int SuppressCollapse { get; set; }
@@ -48,6 +42,8 @@ public partial class MainWindow : Window
     /// <summary>True quando o painel está aberto (o atualizador espera ele fechar para reiniciar).</summary>
     public bool IsExpanded => _expanded;
 
+    public AppSettings Settings => _settings;
+
     public MainWindow(AppSettings settings)
     {
         _settings = settings;
@@ -63,7 +59,7 @@ public partial class MainWindow : Window
         SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
 
         BuildToolList();
-        ApplyEdge(); // já posiciona a alça antes de a janela aparecer
+        ApplySettings(); // aplica tema e já posiciona a alça antes de a janela aparecer
     }
 
     // ---------- Expandir / recolher ----------
@@ -139,8 +135,8 @@ public partial class MainWindow : Window
         };
         ExpandedPanel.RenderTransform = new TransformGroup { Children = { scale, translate } };
 
-        var duration = show ? AnimationDuration : new Duration(TimeSpan.FromMilliseconds(130));
-        DoubleAnimation Anim(double from, double to) => new(from, to, duration) { EasingFunction = Ease };
+        var duration = show ? 260 : 150;
+        DoubleAnimation Anim(double from, double to) => Tools.Anim.FromTo(from, to, duration);
 
         var fade = Anim(show ? 0 : 1, show ? 1 : 0);
         if (onDone is not null) fade.Completed += (_, _) => onDone();
@@ -154,17 +150,34 @@ public partial class MainWindow : Window
 
     private void AnimateHandleIn()
     {
-        CollapsedHandle.BeginAnimation(OpacityProperty,
-            new DoubleAnimation(0, 1, AnimationDuration) { EasingFunction = Ease });
+        CollapsedHandle.BeginAnimation(OpacityProperty, Tools.Anim.FromTo(0, 1, 250));
     }
 
-    /// <summary>Troca de ferramenta: a tela nova sobe um pouco e aparece com fade.</summary>
-    private static void AnimateToolIn(FrameworkElement view)
+    /// <summary>Troca de ferramenta: os blocos da tela nova aparecem em cascata.</summary>
+    private static void AnimateToolIn(FrameworkElement view) => Tools.Anim.EnterView(view);
+
+    // ---------- Configurações ----------
+
+    /// <summary>Aplica tema, tamanho, posição e comportamento a partir das configurações.</summary>
+    public void ApplySettings()
     {
-        var translate = new TranslateTransform(0, 10);
-        view.RenderTransform = translate;
-        view.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, AnimationDuration) { EasingFunction = Ease });
-        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, AnimationDuration) { EasingFunction = Ease });
+        Tools.Anim.Enabled = _settings.Animations;
+        ThemeService.Apply(_settings);
+        _collapseTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(_settings.CloseDelayMs, 150, 3000));
+        ApplyEdge();
+    }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) => SelectTool(Tools.App.SettingsTool.ToolName);
+
+    private void SelectTool(string toolName)
+    {
+        var item = ToolList.Items.OfType<ListBoxItem>()
+            .FirstOrDefault(i => i.Tag is ITool t && t.Name == toolName);
+        if (item is not null)
+        {
+            ToolList.SelectedItem = item;
+            ToolList.ScrollIntoView(item);
+        }
     }
 
     // ---------- Tempo na alça ----------
@@ -225,16 +238,19 @@ public partial class MainWindow : Window
         switch (_settings.Edge)
         {
             case DockEdge.Top:
+                Sidebar.CornerRadius = new CornerRadius(0, 0, 0, 12);
                 CollapsedHandle.CornerRadius = new CornerRadius(0, 0, 8, 8);
                 ExpandedPanel.CornerRadius = new CornerRadius(0, 0, 12, 12);
                 ExpandedPanel.BorderThickness = new Thickness(1, 0, 1, 1);
                 break;
             case DockEdge.Left:
+                Sidebar.CornerRadius = new CornerRadius(0);
                 CollapsedHandle.CornerRadius = new CornerRadius(0, 8, 8, 0);
                 ExpandedPanel.CornerRadius = new CornerRadius(0, 12, 12, 0);
                 ExpandedPanel.BorderThickness = new Thickness(0, 1, 1, 1);
                 break;
             default:
+                Sidebar.CornerRadius = new CornerRadius(12, 0, 0, 12);
                 CollapsedHandle.CornerRadius = new CornerRadius(8, 0, 0, 8);
                 ExpandedPanel.CornerRadius = new CornerRadius(12, 0, 0, 12);
                 ExpandedPanel.BorderThickness = new Thickness(1, 1, 0, 1);
@@ -253,8 +269,10 @@ public partial class MainWindow : Window
         double width, height;
         if (_expanded)
         {
-            width = Math.Min(PanelWidth, area.Width * MaxScreenFraction);
-            height = Math.Min(PanelHeight, area.Height * MaxScreenFraction);
+            // Tamanho definido nas configurações (padrão 50% da tela).
+            var size = Math.Clamp(_settings.PanelSize, 0.3, 0.5);
+            width = Math.Min(area.Width, Math.Max(MinPanelWidth, area.Width * size));
+            height = Math.Min(area.Height, Math.Max(MinPanelHeight, area.Height * size));
         }
         else
         {
@@ -292,9 +310,7 @@ public partial class MainWindow : Window
     /// <summary>Abre o painel fixado mostrando a ferramenta indicada.</summary>
     public void ShowTool(string toolName)
     {
-        var item = ToolList.Items.OfType<ListBoxItem>()
-            .FirstOrDefault(i => i.Tag is ITool t && t.Name == toolName);
-        if (item is not null) ToolList.SelectedItem = item;
+        SelectTool(toolName);
         ExpandPinned();
     }
 

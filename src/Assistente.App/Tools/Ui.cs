@@ -96,6 +96,45 @@ public static class Ui
         return grid;
     }
 
+    /// <summary>Cartão com título e ícone, usado para agrupar seções.</summary>
+    public static Border Card(string title, string? glyph, params UIElement[] children)
+    {
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+        if (glyph is not null)
+        {
+            var icon = new TextBlock
+            {
+                Text = glyph,
+                FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
+                FontSize = 15,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+            };
+            icon.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+            header.Children.Add(icon);
+        }
+        header.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+
+        var body = new StackPanel();
+        body.Children.Add(header);
+        foreach (var child in children)
+        {
+            if (child is FrameworkElement fe && fe.Margin == default) fe.Margin = new Thickness(0, 0, 0, 8);
+            body.Children.Add(child);
+        }
+
+        return new Border
+        {
+            Background = Res("CardBrush"),
+            BorderBrush = Res("CardBorderBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(14, 12, 14, 8),
+            Margin = new Thickness(0, 0, 0, 12),
+            Child = body,
+        };
+    }
+
     // ---------- Textos ----------
 
     public static TextBlock Title(string text) => new()

@@ -48,6 +48,18 @@ public sealed class UpdateService
 
     private static bool IsLightBuild => string.Equals(Metadata("SelfContained"), "false", StringComparison.OrdinalIgnoreCase);
 
+    private static bool AutoUpdateEnabled => MainWindow.Current?.Settings.AutoUpdate ?? true;
+
+    /// <summary>Data/hora da última verificação concluída.</summary>
+    public DateTime? LastCheck { get; private set; }
+
+    private string Report(bool manual, string message)
+    {
+        LastCheck = DateTime.Now;
+        if (manual) TrayIcon.Notify("Atualizações", message);
+        return message;
+    }
+
     public static bool WasJustUpdated(string[] args) => args.Contains(UpdatedArg);
 
     public void Start(string[] args)
@@ -57,7 +69,10 @@ public sealed class UpdateService
         if (WasJustUpdated(args))
             TrayIcon.Notify("Assistente atualizado", $"Agora você está na versão {CurrentVersionText}.");
 
-        _timer.Tick += async (_, _) => await CheckAsync(manual: false);
+        _timer.Tick += async (_, _) =>
+        {
+            if (AutoUpdateEnabled) await CheckAsync(manual: false);
+        };
         _timer.Start();
         _waitForCollapse.Tick += (_, _) => TryApplyPending();
 
@@ -66,23 +81,23 @@ public sealed class UpdateService
         first.Tick += async (_, _) =>
         {
             first.Stop();
-            await CheckAsync(manual: false);
+            if (AutoUpdateEnabled) await CheckAsync(manual: false);
         };
         first.Start();
     }
 
     /// <summary>Verifica e instala uma versão nova, se houver.</summary>
     /// <param name="manual">Se true (menu "Verificar atualizações"), sempre mostra o resultado.</param>
-    public async Task CheckAsync(bool manual)
+    /// <returns>Mensagem com o resultado (mostrada na tela de configurações).</returns>
+    public async Task<string> CheckAsync(bool manual)
     {
-        if (_busy) return;
+        if (_busy) return "Já estou verificando…";
         _busy = true;
         try
         {
             if (Repository is not { } repo || Environment.ProcessPath is not { } exePath)
             {
-                if (manual) TrayIcon.Notify("Atualizações", "Atualização automática não configurada nesta versão.");
-                return;
+                return Report(manual, "Atualização automática não configurada nesta versão.");
             }
 
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
@@ -92,8 +107,7 @@ public sealed class UpdateService
             using var response = await http.GetAsync($"https://api.github.com/repos/{repo}/releases/latest");
             if (!response.IsSuccessStatusCode)
             {
-                if (manual) TrayIcon.Notify("Atualizações", "Ainda não há versões publicadas.");
-                return;
+                return Report(manual, "Ainda não há versões publicadas.");
             }
 
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -101,8 +115,7 @@ public sealed class UpdateService
             var tag = root.GetProperty("tag_name").GetString() ?? "";
             if (!Version.TryParse(tag.TrimStart('v', 'V'), out var latest) || Normalize(latest) <= Normalize(CurrentVersion))
             {
-                if (manual) TrayIcon.Notify("Atualizações", $"Você já está na versão mais recente ({CurrentVersionText}).");
-                return;
+                return Report(manual, $"Você já está na versão mais recente ({CurrentVersionText}).");
             }
 
             var assetName = IsLightBuild ? LightAssetName : FullAssetName;
@@ -112,8 +125,7 @@ public sealed class UpdateService
                 .FirstOrDefault();
             if (url is null)
             {
-                if (manual) TrayIcon.Notify("Atualizações", $"A versão {tag} não tem o arquivo {assetName}.");
-                return;
+                return Report(manual, $"A versão {tag} não tem o arquivo {assetName}.");
             }
 
             TrayIcon.Notify("Atualizando o Assistente", $"Baixando a versão {tag}…");
@@ -127,10 +139,11 @@ public sealed class UpdateService
             _pendingNewPath = newPath;
             _pendingVersion = latest;
             TryApplyPending();
+            return $"Versão {tag} baixada. O app vai reiniciar assim que o painel for fechado.";
         }
         catch (Exception ex)
         {
-            if (manual) TrayIcon.Notify("Atualizações", $"Não foi possível atualizar: {ex.Message}");
+            return Report(manual, $"Não foi possível atualizar: {ex.Message}");
         }
         finally
         {

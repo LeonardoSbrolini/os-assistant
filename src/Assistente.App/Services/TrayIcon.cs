@@ -18,45 +18,8 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(new ToolStripMenuItem("Abrir painel", null, (_, _) => window.ExpandPinned()));
         menu.Items.Add(new ToolStripSeparator());
 
-        // Borda da tela
-        var edgeMenu = new ToolStripMenuItem("Borda da tela");
-        foreach (var (label, edge) in new[] { ("Topo", DockEdge.Top), ("Direita", DockEdge.Right), ("Esquerda", DockEdge.Left) })
-        {
-            var item = new ToolStripMenuItem(label) { Checked = settings.Edge == edge, Tag = edge };
-            item.Click += (_, _) =>
-            {
-                settings.Edge = edge;
-                settings.Save();
-                foreach (var i in edgeMenu.DropDownItems.OfType<ToolStripMenuItem>()) i.Checked = Equals(i.Tag, edge);
-                window.ApplyEdge();
-            };
-            edgeMenu.DropDownItems.Add(item);
-        }
-        menu.Items.Add(edgeMenu);
+        menu.Items.Add(new ToolStripMenuItem("Configurações…", null, (_, _) => window.ShowTool(Tools.App.SettingsTool.ToolName)));
 
-        // Posição ao longo da borda
-        var positionMenu = new ToolStripMenuItem("Posição na borda");
-        foreach (var (label, value) in new[] { ("Início", 0.2), ("Centro", 0.5), ("Fim", 0.8) })
-        {
-            var item = new ToolStripMenuItem(label) { Checked = Math.Abs(settings.Position - value) < 0.01, Tag = value };
-            item.Click += (_, _) =>
-            {
-                settings.Position = value;
-                settings.Save();
-                foreach (var i in positionMenu.DropDownItems.OfType<ToolStripMenuItem>()) i.Checked = Equals(i.Tag, value);
-                window.ApplyEdge();
-            };
-            positionMenu.DropDownItems.Add(item);
-        }
-        menu.Items.Add(positionMenu);
-
-        var startup = new ToolStripMenuItem("Iniciar com o Windows")
-        {
-            CheckOnClick = true,
-            Checked = StartupManager.IsEnabled,
-        };
-        startup.CheckedChanged += (_, _) => StartupManager.SetEnabled(startup.Checked);
-        menu.Items.Add(startup);
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Verificar atualizações", null,

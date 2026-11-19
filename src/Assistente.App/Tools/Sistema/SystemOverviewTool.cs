@@ -20,11 +20,12 @@ public sealed class SystemOverviewTool : ITool
 internal sealed class SystemOverviewView : UserControl
 {
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
-    private readonly CpuUsageSampler _cpu = new();
     private readonly TextBlock _cpuText = new();
     private readonly ProgressBar _cpuBar = new() { Maximum = 100 };
     private readonly TextBlock _ramText = new();
     private readonly ProgressBar _ramBar = new() { Maximum = 100 };
+    private readonly LineGraph _cpuGraph = new() { Height = 60, ShowGrid = false };
+    private readonly LineGraph _ramGraph = new() { Height = 60, ShowGrid = false };
     private readonly TextBlock _uptime = Ui.Caption("");
     private readonly StackPanel _disks = new();
     private int _ticks;
@@ -35,21 +36,16 @@ internal sealed class SystemOverviewView : UserControl
 
         Content = Ui.Scroll(Ui.Stack(
             Ui.Title("Visão geral"),
-            Ui.KeyValues(
+            Ui.Card("Este computador", "\uE7F4", Ui.KeyValues(
                 ("Computador", info.MachineName),
                 ("Usuário", info.UserName),
                 ("Sistema", info.OsName),
                 ("Processador", info.CpuName),
-                ("Núcleos lógicos", info.LogicalCores.ToString())),
-            Ui.Section("Processador"),
-            _cpuText,
-            _cpuBar,
-            Ui.Section("Memória RAM"),
-            _ramText,
-            _ramBar,
-            Ui.Section("Discos e volumes"),
-            _disks,
-            _uptime));
+                ("Núcleos lógicos", info.LogicalCores.ToString())), _uptime),
+            Ui.Row(
+                Ui.Card("Processador", "\uE950", _cpuText, _cpuBar, _cpuGraph),
+                Ui.Card("Memória RAM", "\uE964", _ramText, _ramBar, _ramGraph)),
+            Ui.Card("Discos e volumes", "\uEDA2", _disks)));
 
         _timer.Tick += (_, _) => Refresh();
         IsVisibleChanged += (_, _) =>
@@ -69,7 +65,10 @@ internal sealed class SystemOverviewView : UserControl
 
     private void Refresh()
     {
-        var cpu = _cpu.Sample();
+        var metrics = MetricsService.Instance;
+        var cpu = metrics.Cpu.Last;
+        _cpuGraph.SetValues(metrics.Cpu.Values);
+        _ramGraph.SetValues(metrics.Memory.Values);
         _cpuText.Text = $"{cpu:0}% em uso";
         SetBar(_cpuBar, cpu);
 
@@ -119,7 +118,7 @@ internal sealed class SystemOverviewView : UserControl
 
     private static void SetBar(ProgressBar bar, double percent)
     {
-        bar.Value = percent;
+        Anim.Bar(bar, percent);
         bar.Foreground = Ui.Res(percent >= 90 ? "ErrorBrush" : percent >= 75 ? "WarningBrush" : "AccentBrush");
     }
 

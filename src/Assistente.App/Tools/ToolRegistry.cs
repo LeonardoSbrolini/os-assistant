@@ -8,7 +8,7 @@ namespace Assistente.App.Tools;
 public static class ToolRegistry
 {
     /// <summary>Ordem das categorias na lista lateral. Categorias novas vão para o fim.</summary>
-    private static readonly string[] CategoryOrder = { "Sistema", "Utilitários", "Tempo", "Calculadoras", "Geradores" };
+    private static readonly string[] CategoryOrder = { "Sistema", "Utilitários", "Tempo", "Calculadoras", "Geradores", "Aplicativo" };
 
     private static readonly Lazy<IReadOnlyList<ITool>> LazyTools = new(Discover);
 

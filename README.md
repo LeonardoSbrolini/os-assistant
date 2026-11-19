@@ -14,6 +14,8 @@ Widget flutuante para Windows: fica como uma alça fina no topo da tela (central
 | Categoria | Ferramenta | O que faz |
 |---|---|---|
 | Sistema | Visão geral | Nome do PC, Windows, processador, uso de CPU e RAM ao vivo, discos e volumes com espaço livre, tempo ligado |
+| Sistema | Desempenho | Gráficos do último minuto (estilo Gerenciador de Tarefas): CPU total e por núcleo, memória, disco e rede |
+| Sistema | Hardware | Detalhes estilo CPU-Z: processador (cache, clock, soquete), placa-mãe e BIOS, cada pente de memória, GPU, discos (SSD/HDD, NVMe/SATA), sistema |
 | Sistema | Processos | Lista estilo Gerenciador de Tarefas (memória e CPU por processo), filtro, finalizar processo, abrir local do arquivo |
 | Calculadoras | Calculadora | Expressões com `( ) ^ %`, teclado na tela, histórico |
 | Calculadoras | Juros compostos | Valor inicial + aporte mensal, taxa ao mês/ano, prazo em meses/anos, tabela mês a mês |
@@ -25,6 +27,7 @@ Widget flutuante para Windows: fica como uma alça fina no topo da tela (central
 | Tempo | Cronômetro | Iniciar/pausar, voltas, copiar voltas |
 | Utilitários | Gerador de senhas | Gerador criptográfico, escolha de caracteres |
 | Utilitários | UUID / GUID | Em lote, com opções de formato |
+| Aplicativo | Configurações | Cor de destaque, transparência, tamanho do painel (30–50% da tela), borda e posição, animações, tempo para recolher, iniciar com o Windows, versão e buscar atualizações |
 
 Também: ícone na bandeja (abrir, borda topo/direita/esquerda, posição na borda, iniciar com o Windows, sair), botão de fixar o painel aberto, e a última ferramenta usada é lembrada.
 

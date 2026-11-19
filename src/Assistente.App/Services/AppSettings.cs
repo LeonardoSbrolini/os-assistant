@@ -30,6 +30,25 @@ public sealed class AppSettings
     /// <summary>Posição ao longo da borda (0 = início, 0,5 = centro, 1 = fim).</summary>
     public double Position { get; set; } = 0.5;
 
+    // ---------- Personalização ----------
+
+    /// <summary>Cor de destaque em hexadecimal (#RRGGBB).</summary>
+    public string AccentColor { get; set; } = "#4F8CFF";
+
+    /// <summary>Opacidade do fundo do painel (0,6 a 1).</summary>
+    public double PanelOpacity { get; set; } = 0.95;
+
+    /// <summary>Tamanho do painel em fração da tela (0,3 a 0,5).</summary>
+    public double PanelSize { get; set; } = 0.5;
+
+    public bool Animations { get; set; } = true;
+
+    /// <summary>Tempo até recolher depois que o mouse sai (ms).</summary>
+    public int CloseDelayMs { get; set; } = 450;
+
+    /// <summary>Procurar atualizações sozinho ao abrir e a cada 6 horas.</summary>
+    public bool AutoUpdate { get; set; } = true;
+
     /// <summary>Última ferramenta aberta.</summary>
     public string? LastTool { get; set; }
 
