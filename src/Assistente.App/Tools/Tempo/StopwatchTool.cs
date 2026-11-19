@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Assistente.App.Services;
 
 namespace Assistente.App.Tools.Tempo;
 
@@ -39,7 +40,11 @@ internal sealed class StopwatchView : UserControl
         _startPause = Ui.Btn("Iniciar", StartPause, primary: true);
         _lap = Ui.Btn("Volta", Lap);
         _lap.IsEnabled = false;
-        _tick.Tick += (_, _) => _display.Text = Format(_watch.Elapsed);
+        _tick.Tick += (_, _) =>
+        {
+            _display.Text = Format(_watch.Elapsed);
+            HandleStatus.Set(HandleSource, 1, "\uE916", Short(_watch.Elapsed));
+        };
 
         Content = Ui.Scroll(Ui.Stack(
             Ui.Title("Cronômetro"),
@@ -58,6 +63,7 @@ internal sealed class StopwatchView : UserControl
             _display.Text = Format(_watch.Elapsed);
             _startPause.Content = "Continuar";
             _lap.IsEnabled = false;
+            HandleStatus.Set(HandleSource, 1, "\uE769", Short(_watch.Elapsed));
         }
         else
         {
@@ -87,7 +93,14 @@ internal sealed class StopwatchView : UserControl
         _display.Text = Format(TimeSpan.Zero);
         _startPause.Content = "Iniciar";
         _lap.IsEnabled = false;
+        HandleStatus.Clear(HandleSource);
     }
+
+    private const string HandleSource = "stopwatch";
+
+    /// <summary>Formato curto para a alça: mm:ss (ou h:mm:ss).</summary>
+    private static string Short(TimeSpan t) =>
+        t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{t.Minutes:00}:{t.Seconds:00}";
 
     private static string Format(TimeSpan t) =>
         t.TotalHours >= 1

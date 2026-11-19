@@ -42,6 +42,10 @@ internal sealed class TimerView : UserControl
     private readonly TextBlock _error = Ui.Error();
     private readonly Button _startPause;
 
+    private const string HandleSource = "timer";
+    private const string TimerGlyph = "\uE823";
+    private const string PauseGlyph = "\uE769";
+
     private TimeSpan _total;
     private TimeSpan _remaining;
     private DateTime _endsAt;
@@ -118,6 +122,7 @@ internal sealed class TimerView : UserControl
             _tick.Stop();
             _startPause.Content = "Continuar";
             _status.Text = "Pausado";
+            HandleStatus.Set(HandleSource, 0, PauseGlyph, Format(_remaining));
             return;
         }
 
@@ -148,6 +153,7 @@ internal sealed class TimerView : UserControl
         _status.Text = "";
         _display.Foreground = Ui.Res("TextBrush");
         if (TryReadDuration(out var d)) _display.Text = Format(d);
+        HandleStatus.Clear(HandleSource);
     }
 
     private void Update()
@@ -159,6 +165,7 @@ internal sealed class TimerView : UserControl
             return;
         }
         _display.Text = Format(left);
+        HandleStatus.Set(HandleSource, 0, TimerGlyph, Format(left));
         _progress.Value = _total.TotalSeconds > 0 ? 1 - left.TotalSeconds / _total.TotalSeconds : 0;
     }
 
@@ -171,6 +178,7 @@ internal sealed class TimerView : UserControl
         _display.Foreground = Ui.Res("ErrorBrush");
         _progress.Value = 1;
         _startPause.Content = "Iniciar";
+        HandleStatus.Clear(HandleSource);
 
         var name = string.IsNullOrWhiteSpace(_label.Text) ? "Timer" : _label.Text.Trim();
         _status.Text = $"{name}: tempo esgotado às {DateTime.Now:HH:mm}";

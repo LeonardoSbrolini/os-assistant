@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Assistente.App.Services;
 using Assistente.App.Tools;
@@ -25,6 +26,12 @@ public partial class MainWindow : Window
     private const double HandleLength = 120;
     private const double PanelWidth = 640;
     private const double PanelHeight = 680;
+
+    /// <summary>O painel nunca passa de 40% da largura nem da altura da tela.</summary>
+    private const double MaxScreenFraction = 0.4;
+
+    private static readonly Duration AnimationDuration = new(TimeSpan.FromMilliseconds(180));
+    private static readonly IEasingFunction Ease = new CubicEase { EasingMode = EasingMode.EaseOut };
 
     /// <summary>Enquanto maior que zero, o painel não recolhe (ex.: diálogo de confirmação aberto).</summary>
     public static int SuppressCollapse { get; set; }
@@ -64,7 +71,7 @@ public partial class MainWindow : Window
     private void Window_MouseEnter(object sender, MouseEventArgs e)
     {
         _collapseTimer.Stop();
-        if (!_expanded) Expand();
+        if (!_expanded || _collapsing) Expand();
     }
 
     private void Window_MouseLeave(object sender, MouseEventArgs e)
@@ -84,18 +91,105 @@ public partial class MainWindow : Window
     private void Expand()
     {
         _expanded = true;
+        _collapsing = false;
         CollapsedHandle.Visibility = Visibility.Collapsed;
         ExpandedPanel.Visibility = Visibility.Visible;
         Reposition();
+        AnimatePanel(show: true, onDone: null);
     }
 
     private void Collapse()
     {
-        _expanded = false;
-        ExpandedPanel.Visibility = Visibility.Collapsed;
-        CollapsedHandle.Visibility = Visibility.Visible;
-        Reposition();
+        if (!_expanded || _collapsing) return;
+        _collapsing = true;
+        AnimatePanel(show: false, onDone: () =>
+        {
+            // O mouse pode ter voltado durante a animação.
+            if (!_collapsing) return;
+            _collapsing = false;
+            _expanded = false;
+            ExpandedPanel.Visibility = Visibility.Collapsed;
+            CollapsedHandle.Visibility = Visibility.Visible;
+            Reposition();
+            AnimateHandleIn();
+        });
     }
+
+    private bool _collapsing;
+
+    // ---------- Animações ----------
+
+    /// <summary>Painel "desliza" a partir da borda e aparece/some com fade.</summary>
+    private void AnimatePanel(bool show, Action? onDone)
+    {
+        var (fromX, fromY) = _settings.Edge switch
+        {
+            DockEdge.Top => (0.0, -16.0),
+            DockEdge.Left => (-16.0, 0.0),
+            _ => (16.0, 0.0),
+        };
+
+        var translate = new TranslateTransform(show ? fromX : 0, show ? fromY : 0);
+        var scale = new ScaleTransform(show ? 0.97 : 1, show ? 0.97 : 1);
+        ExpandedPanel.RenderTransformOrigin = _settings.Edge switch
+        {
+            DockEdge.Top => new Point(0.5, 0),
+            DockEdge.Left => new Point(0, 0.5),
+            _ => new Point(1, 0.5),
+        };
+        ExpandedPanel.RenderTransform = new TransformGroup { Children = { scale, translate } };
+
+        var duration = show ? AnimationDuration : new Duration(TimeSpan.FromMilliseconds(130));
+        DoubleAnimation Anim(double from, double to) => new(from, to, duration) { EasingFunction = Ease };
+
+        var fade = Anim(show ? 0 : 1, show ? 1 : 0);
+        if (onDone is not null) fade.Completed += (_, _) => onDone();
+
+        ExpandedPanel.BeginAnimation(OpacityProperty, fade);
+        translate.BeginAnimation(TranslateTransform.XProperty, Anim(show ? fromX : 0, show ? 0 : fromX));
+        translate.BeginAnimation(TranslateTransform.YProperty, Anim(show ? fromY : 0, show ? 0 : fromY));
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim(show ? 0.97 : 1, show ? 1 : 0.97));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim(show ? 0.97 : 1, show ? 1 : 0.97));
+    }
+
+    private void AnimateHandleIn()
+    {
+        CollapsedHandle.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0, 1, AnimationDuration) { EasingFunction = Ease });
+    }
+
+    /// <summary>Troca de ferramenta: a tela nova sobe um pouco e aparece com fade.</summary>
+    private static void AnimateToolIn(FrameworkElement view)
+    {
+        var translate = new TranslateTransform(0, 10);
+        view.RenderTransform = translate;
+        view.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, AnimationDuration) { EasingFunction = Ease });
+        translate.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, AnimationDuration) { EasingFunction = Ease });
+    }
+
+    // ---------- Tempo na alça ----------
+
+    /// <summary>
+    /// Mostra um texto (ex.: tempo do timer) na alça recolhida, no lugar da setinha.
+    /// null volta ao ícone normal.
+    /// </summary>
+    public void SetHandleStatus(string? glyph, string? text)
+    {
+        var hasText = !string.IsNullOrEmpty(text);
+        HandleText.Text = text ?? "";
+        HandleText.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
+        HandleIcon.FontSize = hasText ? 12 : 10;
+        HandleIcon.Text = hasText && glyph is not null ? glyph : DefaultHandleGlyph;
+        if (hasText != _handleHasText)
+        {
+            _handleHasText = hasText;
+            Reposition();
+        }
+    }
+
+    private bool _handleHasText;
+
+    private string DefaultHandleGlyph => _settings.Edge == DockEdge.Top ? "\uE70D" : "\uE700";
 
     /// <summary>Abre o painel e mantém aberto (usado pelo ícone da bandeja).</summary>
     public void ExpandPinned()
@@ -146,7 +240,7 @@ public partial class MainWindow : Window
                 ExpandedPanel.BorderThickness = new Thickness(1, 1, 0, 1);
                 break;
         }
-        HandleIcon.Text = _settings.Edge == DockEdge.Top ? "\uE70D" : "\uE700";
+        if (!_handleHasText) HandleIcon.Text = DefaultHandleGlyph;
         Reposition();
     }
 
@@ -159,13 +253,22 @@ public partial class MainWindow : Window
         double width, height;
         if (_expanded)
         {
-            width = Math.Min(PanelWidth, area.Width);
-            height = Math.Min(PanelHeight, area.Height - 16);
+            width = Math.Min(PanelWidth, area.Width * MaxScreenFraction);
+            height = Math.Min(PanelHeight, area.Height * MaxScreenFraction);
         }
         else
         {
-            width = top ? HandleLength : HandleThickness;
-            height = top ? HandleThickness : HandleLength;
+            if (_handleHasText)
+            {
+                // Alça maior para caber o tempo (ex.: "12:34").
+                width = top ? HandleLength : 92;
+                height = 26;
+            }
+            else
+            {
+                width = top ? HandleLength : HandleThickness;
+                height = top ? HandleThickness : HandleLength;
+            }
         }
 
         Width = width;
@@ -259,6 +362,7 @@ public partial class MainWindow : Window
             _views[tool] = view;
         }
         ToolHost.Content = view;
+        AnimateToolIn(view);
 
         if (_settings.LastTool != tool.Name)
         {

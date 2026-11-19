@@ -11,7 +11,7 @@
     <RootNamespace>Assistente.App</RootNamespace>
     <AssemblyName>Assistente</AssemblyName>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Product>Assistente</Product>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
