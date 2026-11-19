@@ -1,7 +1,8 @@
 name: build
 
-# Push em main: compila e testa.
-# Tag "v1.2.3": compila as duas versões e publica a release que o app usa para se atualizar.
+# Push em main: compila, testa e, se a <Version> do Assistente.App.csproj ainda não
+# tiver release, publica a release "vX.Y.Z" que o app usa para se atualizar sozinho.
+# Ou seja: para lançar uma versão nova, basta aumentar a <Version> e fazer push em main.
 on:
   push:
     branches: [main]
@@ -29,8 +30,16 @@ jobs:
         id: ver
         shell: pwsh
         run: |
-          $v = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0' }
+          $v = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') }
+               else { ([xml](Get-Content src/Assistente.App/Assistente.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1 }
           "version=$v" >> $env:GITHUB_OUTPUT
+          gh release view "v$v" 2>$null
+          $publish = ($LASTEXITCODE -ne 0) -and ($env:GITHUB_EVENT_NAME -ne 'pull_request') -and ($env:GITHUB_REF -eq 'refs/heads/main' -or $env:GITHUB_REF -like 'refs/tags/v*')
+          "publish=$($publish.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "Versão $v · publicar release: $publish"
+          $global:LASTEXITCODE = 0
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Publicar (completo e leve)
         shell: pwsh
@@ -51,7 +60,7 @@ jobs:
           path: release/*.exe
 
       - name: Criar release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.ver.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release/Assistente.exe release/Assistente-leve.exe --title "Assistente ${{ github.ref_name }}" --generate-notes
+        run: gh release create "v${{ steps.ver.outputs.version }}" release/Assistente.exe release/Assistente-leve.exe --target "${{ github.sha }}" --title "Assistente v${{ steps.ver.outputs.version }}" --generate-notes

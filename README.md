@@ -58,14 +58,7 @@ Quando o projeto estiver no GitHub, o workflow `.github/workflows/build.yml` ger
 
 O app consulta a última *release* do repositório no GitHub ao abrir e a cada 6 horas. Se houver versão maior, baixa o novo `.exe`, troca o arquivo e reabre sozinho (só quando o painel está recolhido). Também dá para forçar pelo menu da bandeja → *Verificar atualizações*.
 
-Para publicar uma versão nova:
-
-```powershell
-git tag v0.4.0
-git push origin v0.4.0
-```
-
-O workflow compila as duas versões e cria a release com `Assistente.exe` (completo) e `Assistente-leve.exe` (precisa do .NET 8 Desktop Runtime). Cada app baixa o mesmo tipo que está usando.
+Para publicar uma versão nova, aumente a `<Version>` em `src/Assistente.App/Assistente.App.csproj` e faça push em `main`. O workflow compila as duas versões e cria a release com `Assistente.exe` (completo) e `Assistente-leve.exe` (precisa do .NET 8 Desktop Runtime). Cada app baixa o mesmo tipo que está usando.
 
 ## Estrutura
 
