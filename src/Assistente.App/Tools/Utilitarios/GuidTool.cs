@@ -8,7 +8,7 @@ namespace Assistente.App.Tools.Utilitarios;
 public sealed class GuidTool : ITool
 {
     public string Name => "UUID / GUID";
-    public string Category => "Utilitários";
+    public string Category => "Ferramentas";
     public string Glyph => "";
     public int Order => 1;
     public FrameworkElement CreateView() => new GuidView();

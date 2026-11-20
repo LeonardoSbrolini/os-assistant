@@ -18,7 +18,12 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(new ToolStripMenuItem("Abrir painel", null, (_, _) => window.ExpandPinned()));
         menu.Items.Add(new ToolStripSeparator());
 
-        menu.Items.Add(new ToolStripMenuItem("Configurações…", null, (_, _) => window.ShowTool(Tools.App.SettingsTool.ToolName)));
+        menu.Items.Add(new ToolStripMenuItem("Configurações…", null, (_, _) => SettingsWindow.Open()));
+
+        var startup = new ToolStripMenuItem("Iniciar com o Windows") { CheckOnClick = true };
+        startup.CheckedChanged += (_, _) => StartupManager.SetEnabled(startup.Checked);
+        menu.Opening += (_, _) => startup.Checked = StartupManager.IsEnabled; // reflete mudanças feitas nas configurações
+        menu.Items.Add(startup);
 
 
         menu.Items.Add(new ToolStripSeparator());

@@ -9,7 +9,7 @@ namespace Assistente.App.Tools.Geradores;
 public sealed class DocumentGeneratorTool : ITool
 {
     public string Name => "CPF, CNPJ e RG";
-    public string Category => "Geradores";
+    public string Category => "Ferramentas";
     public string Glyph => "";
     public int Order => 0;
     public FrameworkElement CreateView() => new DocumentGeneratorView();

@@ -23,8 +23,15 @@
                 Cursor="Hand"
                 ToolTip="Assistente">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Image x:Name="HandleAvatar" Visibility="Collapsed" Width="44" Height="44"
+                       RenderTransformOrigin="0.5,0.5" RenderOptions.BitmapScalingMode="HighQuality">
+                    <Image.RenderTransform>
+                        <RotateTransform x:Name="AvatarRotate" />
+                    </Image.RenderTransform>
+                </Image>
                 <TextBlock x:Name="HandleIcon" Text="&#xE700;" FontFamily="{StaticResource IconFont}" FontSize="10"
                            Foreground="White" VerticalAlignment="Center" />
+                <!-- (o avatar some quando a alça mostra só a setinha) -->
                 <!-- Tempo do timer/cronômetro, quando algum estiver rodando -->
                 <TextBlock x:Name="HandleText" Visibility="Collapsed" Margin="6,0,0,0"
                            Foreground="White" FontSize="12" FontWeight="SemiBold"

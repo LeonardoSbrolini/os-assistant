@@ -35,7 +35,7 @@ public partial class MainWindow : Window
 
     private readonly AppSettings _settings;
     private readonly DispatcherTimer _collapseTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
-    private readonly Dictionary<ITool, FrameworkElement> _views = new();
+    private readonly Dictionary<ToolGroup, ToolGroupView> _groupViews = new();
     private bool _expanded;
     private bool _pinned;
 
@@ -57,6 +57,10 @@ public partial class MainWindow : Window
             ClipboardHistory.Instance.Attach(this);
         };
         SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
+
+        // De tempos em tempos o avatar dá uma "balançadinha" para parecer vivo.
+        _avatarIdle.Tick += (_, _) => WiggleAvatar();
+        _avatarIdle.Start();
 
         BuildToolList();
         ApplySettings(); // aplica tema e já posiciona a alça antes de a janela aparecer
@@ -153,8 +157,6 @@ public partial class MainWindow : Window
         CollapsedHandle.BeginAnimation(OpacityProperty, Tools.Anim.FromTo(0, 1, 250));
     }
 
-    /// <summary>Troca de ferramenta: os blocos da tela nova aparecem em cascata.</summary>
-    private static void AnimateToolIn(FrameworkElement view) => Tools.Anim.EnterView(view);
 
     // ---------- Configurações ----------
 
@@ -167,18 +169,9 @@ public partial class MainWindow : Window
         ApplyEdge();
     }
 
-    private void SettingsButton_Click(object sender, RoutedEventArgs e) => SelectTool(Tools.App.SettingsTool.ToolName);
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) => SettingsWindow.Open();
 
-    private void SelectTool(string toolName)
-    {
-        var item = ToolList.Items.OfType<ListBoxItem>()
-            .FirstOrDefault(i => i.Tag is ITool t && t.Name == toolName);
-        if (item is not null)
-        {
-            ToolList.SelectedItem = item;
-            ToolList.ScrollIntoView(item);
-        }
-    }
+    private void SelectTool(string toolName) => SelectGroup(ToolRegistry.GroupOf(toolName), toolName);
 
     // ---------- Tempo na alça ----------
 
@@ -188,19 +181,68 @@ public partial class MainWindow : Window
     /// </summary>
     public void SetHandleStatus(string? glyph, string? text)
     {
-        var hasText = !string.IsNullOrEmpty(text);
+        _handleGlyph = glyph;
         HandleText.Text = text ?? "";
-        HandleText.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
-        HandleIcon.FontSize = hasText ? 12 : 10;
-        HandleIcon.Text = hasText && glyph is not null ? glyph : DefaultHandleGlyph;
+        var hasText = !string.IsNullOrEmpty(text);
         if (hasText != _handleHasText)
         {
             _handleHasText = hasText;
-            Reposition();
+            UpdateHandle();
+        }
+        else if (hasText && !_hasAvatar)
+        {
+            HandleIcon.Text = glyph ?? DefaultHandleGlyph;
         }
     }
 
+    private readonly DispatcherTimer _avatarIdle = new() { Interval = TimeSpan.FromSeconds(9) };
+
+    private void WiggleAvatar()
+    {
+        if (!_hasAvatar || _expanded || !Tools.Anim.Enabled) return;
+        var wiggle = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(900) };
+        foreach (var (ms, angle) in new[] { (0, 0.0), (150, -12.0), (300, 10.0), (450, -7.0), (600, 4.0), (900, 0.0) })
+            wiggle.KeyFrames.Add(new EasingDoubleKeyFrame(angle, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(ms))));
+        AvatarRotate.BeginAnimation(RotateTransform.AngleProperty, wiggle);
+    }
+
     private bool _handleHasText;
+    private string? _handleGlyph;
+    private bool _hasAvatar;
+
+    /// <summary>Atualiza a aparência da alça: barra com setinha, avatar e/ou tempo do timer.</summary>
+    private void UpdateHandle()
+    {
+        var avatar = Services.Avatars.Find(_settings.Avatar);
+        _hasAvatar = avatar is not null;
+
+        HandleAvatar.Source = avatar?.Image;
+        HandleAvatar.Visibility = _hasAvatar ? Visibility.Visible : Visibility.Collapsed;
+        HandleAvatar.Width = HandleAvatar.Height = _handleHasText ? 26 : 44;
+
+        HandleText.Visibility = _handleHasText ? Visibility.Visible : Visibility.Collapsed;
+        HandleIcon.Visibility = _hasAvatar ? Visibility.Collapsed : Visibility.Visible;
+        HandleIcon.FontSize = _handleHasText ? 12 : 10;
+        HandleIcon.Text = _handleHasText && _handleGlyph is not null ? _handleGlyph : DefaultHandleGlyph;
+
+        if (_hasAvatar)
+        {
+            // Avatar: alça vira um círculo (ou pílula com o tempo) com borda na cor de destaque.
+            CollapsedHandle.Padding = new Thickness(_handleHasText ? 4 : 3);
+            CollapsedHandle.CornerRadius = new CornerRadius(_handleHasText ? 17 : 25);
+        }
+        else
+        {
+            CollapsedHandle.Padding = new Thickness(0);
+            CollapsedHandle.CornerRadius = _settings.Edge switch
+            {
+                DockEdge.Top => new CornerRadius(0, 0, 8, 8),
+                DockEdge.Left => new CornerRadius(0, 8, 8, 0),
+                _ => new CornerRadius(8, 0, 0, 8),
+            };
+        }
+        Reposition();
+    }
 
     private string DefaultHandleGlyph => _settings.Edge == DockEdge.Top ? "\uE70D" : "\uE700";
 
@@ -256,8 +298,7 @@ public partial class MainWindow : Window
                 ExpandedPanel.BorderThickness = new Thickness(1, 1, 0, 1);
                 break;
         }
-        if (!_handleHasText) HandleIcon.Text = DefaultHandleGlyph;
-        Reposition();
+        UpdateHandle();
     }
 
     private void Reposition()
@@ -276,7 +317,13 @@ public partial class MainWindow : Window
         }
         else
         {
-            if (_handleHasText)
+            if (_hasAvatar)
+            {
+                // Círculo do avatar (ou pílula avatar + tempo).
+                width = _handleHasText ? 112 : 50;
+                height = _handleHasText ? 34 : 50;
+            }
+            else if (_handleHasText)
             {
                 // Alça maior para caber o tempo (ex.: "12:34").
                 width = top ? HandleLength : 92;
@@ -324,67 +371,69 @@ public partial class MainWindow : Window
 
     private void BuildToolList()
     {
-        foreach (var group in ToolRegistry.Tools.GroupBy(t => t.Category))
+        foreach (var group in ToolRegistry.Groups)
         {
-            ToolList.Items.Add(new ListBoxItem
-            {
-                IsEnabled = false,
-                Focusable = false,
-                Padding = new Thickness(10, 10, 10, 2),
-                Content = new TextBlock
-                {
-                    Text = group.Key.ToUpperInvariant(),
-                    FontSize = 11,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = (Brush)FindResource("MutedBrush"),
-                },
-            });
-
-            foreach (var tool in group)
-            {
-                var item = new ListBoxItem { Tag = tool, Content = ToolLabel(tool) };
-                ToolList.Items.Add(item);
-            }
+            var item = new ListBoxItem { Tag = group, Content = GroupLabel(group), ToolTip = string.Join(", ", group.Tools.Select(t => t.Name)) };
+            ToolList.Items.Add(item);
         }
 
-        // Seleciona a última ferramenta usada (ou a primeira).
-        var last = ToolList.Items.OfType<ListBoxItem>()
-            .FirstOrDefault(i => i.Tag is ITool t && t.Name == _settings.LastTool);
-        ToolList.SelectedItem = last ?? ToolList.Items.OfType<ListBoxItem>().FirstOrDefault(i => i.Tag is ITool);
+        // Abre o grupo da última ferramenta usada (ou o primeiro).
+        var lastGroup = _settings.LastTool is { } last ? ToolRegistry.GroupOf(last) : null;
+        SelectGroup(lastGroup ?? ToolRegistry.Groups.FirstOrDefault(), _settings.LastTool);
     }
 
-    private StackPanel ToolLabel(ITool tool)
+    private StackPanel GroupLabel(ToolGroup group)
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         panel.Children.Add(new TextBlock
         {
-            Text = tool.Glyph,
+            Text = group.Glyph,
             FontFamily = (FontFamily)FindResource("IconFont"),
-            FontSize = 14,
-            Width = 22,
+            FontSize = 16,
+            Width = 28,
             VerticalAlignment = VerticalAlignment.Center,
         });
-        panel.Children.Add(new TextBlock { Text = tool.Name, VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(new TextBlock { Text = group.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
         return panel;
     }
 
+    private void SelectGroup(ToolGroup? group, string? toolName = null)
+    {
+        if (group is null) return;
+        var item = ToolList.Items.OfType<ListBoxItem>().FirstOrDefault(i => ReferenceEquals(i.Tag, group));
+        if (item is null) return;
+
+        _pendingTool = toolName;
+        if (ToolList.SelectedItem == item) ShowGroup(group);
+        else ToolList.SelectedItem = item; // dispara ToolList_SelectionChanged
+        ToolList.ScrollIntoView(item);
+    }
+
+    private string? _pendingTool;
+
     private void ToolList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ToolList.SelectedItem is not ListBoxItem { Tag: ITool tool }) return;
+        if (ToolList.SelectedItem is ListBoxItem { Tag: ToolGroup group }) ShowGroup(group);
+    }
 
-        if (!_views.TryGetValue(tool, out var view))
+    private void ShowGroup(ToolGroup group)
+    {
+        if (!_groupViews.TryGetValue(group, out var view))
         {
-            view = tool.CreateView();
-            _views[tool] = view;
+            view = new ToolGroupView(group);
+            view.ToolChanged += tool =>
+            {
+                if (_settings.LastTool == tool.Name) return;
+                _settings.LastTool = tool.Name;
+                _settings.Save();
+            };
+            _groupViews[group] = view;
         }
+
         ToolHost.Content = view;
-        AnimateToolIn(view);
-
-        if (_settings.LastTool != tool.Name)
-        {
-            _settings.LastTool = tool.Name;
-            _settings.Save();
-        }
+        if (_pendingTool is { } name && group.Tools.Any(t => t.Name == name)) view.Show(name);
+        else view.EnsureShown();
+        _pendingTool = null;
     }
 
     // ---------- Win32: esconder do Alt+Tab ----------

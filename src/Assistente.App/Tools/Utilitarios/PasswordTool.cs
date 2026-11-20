@@ -9,7 +9,7 @@ namespace Assistente.App.Tools.Utilitarios;
 public sealed class PasswordTool : ITool
 {
     public string Name => "Gerador de senhas";
-    public string Category => "Utilitários";
+    public string Category => "Ferramentas";
     public string Glyph => "";
     public int Order => 0;
     public FrameworkElement CreateView() => new PasswordView();

@@ -20,7 +20,17 @@ public static class ThemeService
         ("Ciano", "#06B6D4"),
     };
 
-    private static readonly Color PanelBase = Color.FromRgb(0x1C, 0x1D, 0x22);
+    /// <summary>Temas: cor de fundo das telas (a transparência é ajustada à parte).</summary>
+    public static readonly (string Name, string Hex)[] Themes =
+    {
+        ("Escuro", "#1C1D22"),
+        ("Meia-noite", "#0F172A"),
+        ("Grafite", "#262626"),
+        ("Noite roxa", "#1E1530"),
+        ("Floresta", "#0E1F1A"),
+        ("Vinho", "#2A1218"),
+        ("Oceano", "#0B2230"),
+    };
 
     public static Color ParseColor(string? hex, Color fallback)
     {
@@ -42,8 +52,15 @@ public static class ThemeService
         resources["AccentBrush"] = Frozen(accent);
         resources["AccentSoftBrush"] = Frozen(Color.FromArgb(0x33, accent.R, accent.G, accent.B));
 
-        var alpha = (byte)Math.Round(Math.Clamp(settings.PanelOpacity, 0.6, 1) * 255);
-        resources["PanelBrush"] = Frozen(Color.FromArgb(alpha, PanelBase.R, PanelBase.G, PanelBase.B));
+        var themeHex = Array.Find(Themes, t => t.Name == settings.Theme).Hex ?? Themes[0].Hex;
+        var baseColor = ParseColor(themeHex, Color.FromRgb(0x1C, 0x1D, 0x22));
+        resources["ThemeBaseColor"] = baseColor;
+
+        var panelAlpha = (byte)Math.Round(Math.Clamp(settings.PanelOpacity, 0.6, 1) * 255);
+        resources["PanelBrush"] = Frozen(Color.FromArgb(panelAlpha, baseColor.R, baseColor.G, baseColor.B));
+
+        var windowAlpha = (byte)Math.Round(Math.Clamp(settings.WindowOpacity, 0.6, 1) * 255);
+        resources["WindowBrush"] = Frozen(Color.FromArgb(windowAlpha, baseColor.R, baseColor.G, baseColor.B));
     }
 
     private static SolidColorBrush Frozen(Color color)

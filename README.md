@@ -27,7 +27,12 @@ Widget flutuante para Windows: fica como uma alça fina no topo da tela (central
 | Tempo | Cronômetro | Iniciar/pausar, voltas, copiar voltas |
 | Utilitários | Gerador de senhas | Gerador criptográfico, escolha de caracteres |
 | Utilitários | UUID / GUID | Em lote, com opções de formato |
-| Aplicativo | Configurações | Cor de destaque, transparência, tamanho do painel (30–50% da tela), borda e posição, animações, tempo para recolher, iniciar com o Windows, versão e buscar atualizações |
+| Chat IA | Conversa | Chat com IA gratuita (Pollinations, sem cadastro) ou com a sua chave (Groq, OpenRouter, OpenAI…) |
+| Música | Tocando agora | Controla YouTube Music, Spotify e outros players pelo controle de mídia do Windows: capa, título, progresso, tocar/pausar, anterior/próxima, volume |
+
+As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferramentas, Calculadoras, Tempo) e cada grupo tem sub-abas.
+
+**Configurações** (botão ⚙ ou ícone da bandeja) abrem numa janela própria: iniciar com o Windows, temas, cor de destaque, transparência do painel e das janelas, tamanho, animações, **10 avatares originais** para a alça, posição, serviço de IA e atualizações.
 
 Também: ícone na bandeja (abrir, borda topo/direita/esquerda, posição na borda, iniciar com o Windows, sair), botão de fixar o painel aberto, e a última ferramenta usada é lembrada.
 

@@ -11,7 +11,7 @@ namespace Assistente.App.Tools.Utilitarios;
 public sealed class ClipboardTool : ITool
 {
     public string Name => "Histórico de cópias";
-    public string Category => "Utilitários";
+    public string Category => "Ferramentas";
     public string Glyph => "";
     public int Order => -1;
     public FrameworkElement CreateView() => new ClipboardView();

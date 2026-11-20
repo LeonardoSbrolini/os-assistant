@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -42,6 +44,48 @@ public sealed class AppSettings
     public double PanelSize { get; set; } = 0.5;
 
     public bool Animations { get; set; } = true;
+
+    /// <summary>Tema (cor de fundo das telas). Ver ThemeService.Themes.</summary>
+    public string Theme { get; set; } = "Escuro";
+
+    /// <summary>Opacidade das janelas (configurações) de 0,6 a 1.</summary>
+    public double WindowOpacity { get; set; } = 0.97;
+
+    /// <summary>Avatar da alça (id em Avatars). Vazio = setinha.</summary>
+    public string? Avatar { get; set; }
+
+    // ---------- Chat IA ----------
+
+    /// <summary>"gratuito" (sem cadastro) ou "personalizado" (compatível com OpenAI).</summary>
+    public string ChatProvider { get; set; } = "gratuito";
+
+    public string ChatBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
+
+    public string ChatModel { get; set; } = "llama-3.3-70b-versatile";
+
+    /// <summary>Chave da API criptografada com a conta do Windows (DPAPI).</summary>
+    public string? ChatApiKeyProtected { get; set; }
+
+    [JsonIgnore]
+    public string? ChatApiKey
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ChatApiKeyProtected)) return null;
+            try
+            {
+                var bytes = ProtectedData.Unprotect(Convert.FromBase64String(ChatApiKeyProtected), null, DataProtectionScope.CurrentUser);
+                return Encoding.UTF8.GetString(bytes);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+        set => ChatApiKeyProtected = string.IsNullOrWhiteSpace(value)
+            ? null
+            : Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(value.Trim()), null, DataProtectionScope.CurrentUser));
+    }
 
     /// <summary>Tempo até recolher depois que o mouse sai (ms).</summary>
     public int CloseDelayMs { get; set; } = 450;
