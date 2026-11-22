@@ -48,24 +48,50 @@ public sealed class MetricsService
         _timer.Start();
     }
 
-    private void Sample()
+    private bool _sampling;
+
+    /// <summary>
+    /// A leitura (contadores, rede) leva alguns milissegundos: roda numa thread separada para
+    /// não travar as animações; só o resultado volta para a interface.
+    /// </summary>
+    private async void Sample()
     {
-        Cpu.Add(_cpu.Sample());
+        if (_sampling) return;
+        _sampling = true;
+        try
+        {
+            var data = await System.Threading.Tasks.Task.Run(() =>
+            {
+                var cpu = _cpu.Sample();
+                var cores = _cores.Sample();
+                var memory = SystemInfo.GetMemory();
+                var disk = SampleDisk();
+                var (rx, tx) = SampleNetwork();
+                return (cpu, cores, memory, disk, rx, tx);
+            });
 
-        var cores = _cores.Sample();
-        while (Cores.Count < cores.Length) Cores.Add(new History());
-        for (var i = 0; i < cores.Length; i++) Cores[i].Add(cores[i]);
+            Cpu.Add(data.cpu);
+            while (Cores.Count < data.cores.Length) Cores.Add(new History());
+            for (var i = 0; i < data.cores.Length; i++) Cores[i].Add(data.cores[i]);
+            LastMemory = data.memory;
+            Memory.Add(data.memory.UsedPercent);
+            if (data.disk is { } disk) Disk.Add(disk);
+            NetReceive.Add(data.rx);
+            NetSend.Add(data.tx);
 
-        LastMemory = SystemInfo.GetMemory();
-        Memory.Add(LastMemory.UsedPercent);
-
-        SampleDisk();
-        SampleNetwork();
-
-        Sampled?.Invoke();
+            Sampled?.Invoke();
+        }
+        catch (Exception)
+        {
+            // Tenta de novo no próximo segundo.
+        }
+        finally
+        {
+            _sampling = false;
+        }
     }
 
-    private void SampleDisk()
+    private double? SampleDisk()
     {
         if (!_diskTried)
         {
@@ -81,27 +107,28 @@ public sealed class MetricsService
                 _diskIdle = null; // Contadores indisponíveis (ex.: desativados no sistema).
             }
         }
-        if (_diskIdle is null) return;
+        if (_diskIdle is null) return null;
         try
         {
-            Disk.Add(Math.Clamp(100 - _diskIdle.NextValue(), 0, 100));
+            return Math.Clamp(100 - _diskIdle.NextValue(), 0, 100);
         }
         catch (Exception)
         {
             _diskIdle = null;
+            return null;
         }
     }
 
-    private void SampleNetwork()
+    private (double Rx, double Tx) SampleNetwork()
     {
         var (rx, tx) = ReadNetworkBytes();
         var now = DateTime.UtcNow;
         var seconds = Math.Max(0.001, (now - _lastNet).TotalSeconds);
-        NetReceive.Add(Math.Max(0, (rx - _lastRx) / seconds));
-        NetSend.Add(Math.Max(0, (tx - _lastTx) / seconds));
+        var result = (Math.Max(0, (rx - _lastRx) / seconds), Math.Max(0, (tx - _lastTx) / seconds));
         _lastRx = rx;
         _lastTx = tx;
         _lastNet = now;
+        return result;
     }
 
     private static (long Rx, long Tx) ReadNetworkBytes()

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -130,14 +131,64 @@ internal sealed class ProcessesView : UserControl
         Binding = new Binding(path) { StringFormat = format, ConverterCulture = Ui.PtBr },
     };
 
-    private void Refresh()
-    {
-        var now = DateTime.UtcNow;
-        var elapsedMs = (now - _lastSample).TotalMilliseconds;
-        _lastSample = now;
-        var seen = new HashSet<int>();
-        long totalMemory = 0;
+    private bool _refreshing;
 
+    /// <summary>Lê os processos numa thread separada (é lento) e só atualiza a lista na interface.</summary>
+    private async void Refresh()
+    {
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var elapsedMs = (now - _lastSample).TotalMilliseconds;
+            _lastSample = now;
+            var previousCpu = new Dictionary<int, TimeSpan>(_lastCpuTime);
+
+            var (samples, cpuTimes, totalMemory) = await Task.Run(() => Sample(previousCpu, elapsedMs));
+
+            _lastCpuTime.Clear();
+            foreach (var pair in cpuTimes) _lastCpuTime[pair.Key] = pair.Value;
+
+            var seen = new HashSet<int>();
+            foreach (var sample in samples)
+            {
+                seen.Add(sample.Pid);
+                if (!_rows.TryGetValue(sample.Pid, out var row))
+                {
+                    row = new ProcessRow(sample.Pid, sample.Name);
+                    _rows[sample.Pid] = row;
+                    _items.Add(row);
+                }
+                row.MemoryMb = sample.MemoryMb;
+                row.Cpu = sample.Cpu;
+            }
+
+            foreach (var pid in _rows.Keys.Where(p => !seen.Contains(p)).ToList())
+            {
+                _items.Remove(_rows[pid]);
+                _rows.Remove(pid);
+            }
+
+            _summary.Text = $"{_items.Count} processos · {ByteSize.Format(totalMemory, Ui.PtBr)} em uso (working set)";
+        }
+        catch (Exception)
+        {
+            // Tenta de novo no próximo ciclo.
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private sealed record ProcessSample(int Pid, string Name, double MemoryMb, double Cpu);
+
+    private static (List<ProcessSample>, Dictionary<int, TimeSpan>, long) Sample(Dictionary<int, TimeSpan> previousCpu, double elapsedMs)
+    {
+        var samples = new List<ProcessSample>();
+        var cpuTimes = new Dictionary<int, TimeSpan>();
+        long totalMemory = 0;
         foreach (var process in Process.GetProcesses())
         {
             using (process)
@@ -145,7 +196,6 @@ internal sealed class ProcessesView : UserControl
                 try
                 {
                     var pid = process.Id;
-                    seen.Add(pid);
                     var memory = process.WorkingSet64;
                     totalMemory += memory;
 
@@ -153,23 +203,15 @@ internal sealed class ProcessesView : UserControl
                     try
                     {
                         var cpuTime = process.TotalProcessorTime;
-                        if (_lastCpuTime.TryGetValue(pid, out var previous) && elapsedMs > 0)
+                        if (previousCpu.TryGetValue(pid, out var previous) && elapsedMs > 0)
                             cpu = (cpuTime - previous).TotalMilliseconds / elapsedMs / Environment.ProcessorCount * 100;
-                        _lastCpuTime[pid] = cpuTime;
+                        cpuTimes[pid] = cpuTime;
                     }
                     catch (Exception)
                     {
                         // Processos do sistema podem negar acesso ao tempo de CPU.
                     }
-
-                    if (!_rows.TryGetValue(pid, out var row))
-                    {
-                        row = new ProcessRow(pid, process.ProcessName);
-                        _rows[pid] = row;
-                        _items.Add(row);
-                    }
-                    row.MemoryMb = memory / 1024.0 / 1024.0;
-                    row.Cpu = Math.Clamp(cpu, 0, 100);
+                    samples.Add(new ProcessSample(pid, process.ProcessName, memory / 1024.0 / 1024.0, Math.Clamp(cpu, 0, 100)));
                 }
                 catch (Exception)
                 {
@@ -177,15 +219,7 @@ internal sealed class ProcessesView : UserControl
                 }
             }
         }
-
-        foreach (var pid in _rows.Keys.Where(p => !seen.Contains(p)).ToList())
-        {
-            _items.Remove(_rows[pid]);
-            _rows.Remove(pid);
-            _lastCpuTime.Remove(pid);
-        }
-
-        _summary.Text = $"{_items.Count} processos · {ByteSize.Format(totalMemory, Ui.PtBr)} em uso (working set)";
+        return (samples, cpuTimes, totalMemory);
     }
 
     private ProcessRow? Selected => _grid.SelectedItem as ProcessRow;

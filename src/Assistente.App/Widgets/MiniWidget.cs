@@ -50,7 +50,6 @@ public abstract class MiniWidget : Window
             Padding = new Thickness(5),
             Margin = new Thickness(ShadowMargin),
             BorderThickness = new Thickness(1),
-            Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.35, Color = Colors.Black },
             RenderTransform = _slide,
         };
         Pill.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
@@ -107,15 +106,16 @@ public abstract class MiniWidget : Window
         var h = ActualHeight;
         double left, top;
 
+        var handle = main.HandleVisualRect;
         if (main.Settings.Edge == DockEdge.Top)
         {
-            top = area.Top + Math.Max(0, (main.Height - h) / 2);
-            left = Side == WidgetSide.Before ? main.Left - Gap - w : main.Left + main.Width + Gap;
+            top = handle.Top + handle.Height / 2 - h / 2;
+            left = Side == WidgetSide.Before ? handle.Left - Gap - w : handle.Right + Gap;
         }
         else
         {
-            left = main.Settings.Edge == DockEdge.Left ? area.Left : area.Right - w;
-            top = Side == WidgetSide.Before ? main.Top - Gap - h : main.Top + main.Height + Gap;
+            left = main.Settings.Edge == DockEdge.Left ? handle.Left - ShadowMargin : handle.Right - w + ShadowMargin;
+            top = Side == WidgetSide.Before ? handle.Top - Gap - h : handle.Bottom + Gap;
         }
 
         Left = Math.Clamp(left, area.Left, Math.Max(area.Left, area.Right - w));

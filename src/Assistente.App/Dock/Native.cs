@@ -254,6 +254,76 @@ internal static class Native
         }
     }
 
+    /// <summary>Esconde (ou mostra) de vez as barras de tarefas do Windows, inclusive dos outros monitores.</summary>
+    public static void SetTaskbarVisible(bool visible)
+    {
+        foreach (var bar in TaskbarWindows())
+        {
+            if (IsWindowVisible(bar) != visible) ShowWindow(bar, visible ? SwShowNa : SwHide);
+        }
+    }
+
+    /// <summary>Alguma barra do Windows voltou a aparecer (o Explorer às vezes mostra de novo)?</summary>
+    public static bool AnyTaskbarVisible()
+    {
+        foreach (var bar in TaskbarWindows())
+            if (IsWindowVisible(bar)) return true;
+        return false;
+    }
+
+    private static List<IntPtr> TaskbarWindows()
+    {
+        var list = new List<IntPtr>();
+        var main = FindWindow("Shell_TrayWnd", null);
+        if (main != IntPtr.Zero) list.Add(main);
+        var other = IntPtr.Zero;
+        while ((other = FindWindowEx(IntPtr.Zero, other, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero) list.Add(other);
+        return list;
+    }
+
+    /// <summary>Menu Iniciar / pesquisa aberto (não esconder a barra nesse momento).</summary>
+    public static bool IsShellUiForeground()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return false;
+        var cls = new StringBuilder(256);
+        GetClassName(hwnd, cls, cls.Capacity);
+        var name = cls.ToString();
+        if (name is "Windows.UI.Core.CoreWindow" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "XamlExplorerHostIslandWindow")
+            return true;
+        var exe = GetProcessPath(GetWindowProcessId(hwnd)) ?? "";
+        var file = Path.GetFileName(exe);
+        return file.Equals("StartMenuExperienceHost.exe", StringComparison.OrdinalIgnoreCase) ||
+               file.Equals("SearchHost.exe", StringComparison.OrdinalIgnoreCase) ||
+               file.Equals("SearchApp.exe", StringComparison.OrdinalIgnoreCase) ||
+               file.Equals("ShellExperienceHost.exe", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Posição do mouse em pixels da tela.</summary>
+    public static (int X, int Y) CursorPosition()
+    {
+        GetCursorPos(out var p);
+        return (p.X, p.Y);
+    }
+
+    public static (int Width, int Height) PrimaryScreenPixels() => (GetSystemMetrics(SmCxScreen), GetSystemMetrics(SmCyScreen));
+
+    /// <summary>
+    /// Retângulo (pixels) da janela em primeiro plano de outro programa, se for uma janela "normal"
+    /// visível (não a área de trabalho, não minimizada).
+    /// </summary>
+    public static Rect? ForegroundAppRect()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero || IsIconic(hwnd) || !IsWindowVisible(hwnd)) return null;
+        if (GetWindowProcessId(hwnd) == (uint)Environment.ProcessId) return null;
+        var cls = new StringBuilder(256);
+        GetClassName(hwnd, cls, cls.Capacity);
+        if (IgnoredClasses.Contains(cls.ToString())) return null;
+        if (!GetWindowRect(hwnd, out var r)) return null;
+        return new Rect(r.Left, r.Top, Math.Max(0, r.Right - r.Left), Math.Max(0, r.Bottom - r.Top));
+    }
+
     /// <summary>Abre o menu Iniciar (como apertar a tecla Windows).</summary>
     public static void OpenStartMenu()
     {
@@ -300,6 +370,8 @@ internal static class Native
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const int SwRestore = 9;
     private const int SwMinimize = 6;
+    private const int SwHide = 0;
+    private const int SwShowNa = 8;
     private const uint WmClose = 0x0010;
     private const uint WmGetIcon = 0x007F;
     private const int GclpHIcon = -14;
@@ -365,6 +437,12 @@ internal static class Native
     [DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string cls, string? title);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string? title);
     [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
     [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll", EntryPoint = "GetClassLongPtrW")] private static extern IntPtr GetClassLongPtr(IntPtr hwnd, int index);

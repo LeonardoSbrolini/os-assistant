@@ -31,6 +31,9 @@ public partial class MainWindow : Window
     private const double AvatarCircle = 40;
     private const double AvatarSize = 34;
 
+    /// <summary>Espaço entre o avatar e a borda da tela.</summary>
+    private const double EdgeGap = 6;
+
     /// <summary>A alça mudou de lugar/tamanho ou o painel abriu/fechou (os mini widgets se reposicionam).</summary>
     public event Action? HandleLayoutChanged;
 
@@ -69,6 +72,10 @@ public partial class MainWindow : Window
         _avatarIdle.Tick += (_, _) => WiggleAvatar();
         _avatarIdle.Start();
 
+        CollapsedHandle.RenderTransform = _handleSlide;
+        _peek.Tick += (_, _) => Peek();
+        _peek.Start();
+
         BuildToolList();
         ApplySettings(); // aplica tema e já posiciona a alça antes de a janela aparecer
     }
@@ -97,6 +104,7 @@ public partial class MainWindow : Window
 
     private void Expand()
     {
+        _handleWantHideSince = DateTime.MaxValue;
         _expanded = true;
         _collapsing = false;
         CollapsedHandle.Visibility = Visibility.Collapsed;
@@ -126,37 +134,87 @@ public partial class MainWindow : Window
 
     // ---------- Animações ----------
 
-    /// <summary>Painel "desliza" a partir da borda e aparece/some com fade.</summary>
+    /// <summary>
+    /// Efeito "gênio": o painel sai do avatar se esticando primeiro no comprimento e depois na
+    /// largura; ao fechar, afunila de volta para dentro do avatar.
+    /// </summary>
     private void AnimatePanel(bool show, Action? onDone)
     {
-        var (fromX, fromY) = _settings.Edge switch
+        var top = _settings.Edge == DockEdge.Top;
+        var area = SystemParameters.WorkArea;
+        var position = Math.Clamp(_settings.Position, 0, 1);
+
+        // Ponto de onde o painel "sai": o avatar.
+        Point origin;
+        if (top)
         {
-            DockEdge.Top => (0.0, -16.0),
-            DockEdge.Left => (-16.0, 0.0),
-            _ => (16.0, 0.0),
-        };
-
-        var translate = new TranslateTransform(show ? fromX : 0, show ? fromY : 0);
-        var scale = new ScaleTransform(show ? 0.97 : 1, show ? 0.97 : 1);
-        ExpandedPanel.RenderTransformOrigin = _settings.Edge switch
+            var centerX = area.Left + area.Width * position;
+            origin = new Point(Width > 0 ? Math.Clamp((centerX - Left) / Width, 0, 1) : 0.5, 0);
+        }
+        else
         {
-            DockEdge.Top => new Point(0.5, 0),
-            DockEdge.Left => new Point(0, 0.5),
-            _ => new Point(1, 0.5),
+            var centerY = area.Top + area.Height * position;
+            var oy = Height > 0 ? Math.Clamp((centerY - Top) / Height, 0, 1) : 0.5;
+            origin = new Point(_settings.Edge == DockEdge.Left ? 0 : 1, oy);
+        }
+
+        var scale = new ScaleTransform(1, 1);
+        ExpandedPanel.RenderTransformOrigin = origin;
+        ExpandedPanel.RenderTransform = scale;
+
+        // Enquanto anima, o painel vira uma "foto" (BitmapCache): bem mais leve que redesenhar tudo a cada quadro.
+        var dpi = VisualTreeHelper.GetDpi(this);
+        ExpandedPanel.CacheMode = new BitmapCache { RenderAtScale = dpi.DpiScaleX, SnapsToDevicePixels = true };
+
+        // "Comprimento" = sai da borda; "largura" = ao longo da borda.
+        var lengthProp = top ? ScaleTransform.ScaleYProperty : ScaleTransform.ScaleXProperty;
+        var widthProp = top ? ScaleTransform.ScaleXProperty : ScaleTransform.ScaleYProperty;
+
+        AnimationTimeline length, width, fade;
+        if (show)
+        {
+            length = Keys((0, 0.04, null), (300, 1, Tools.Anim.EaseOut));
+            width = Keys((0, 0.10, null), (110, 0.22, Tools.Anim.EaseIn), (380, 1, Tools.Anim.Back));
+            fade = Keys((0, 0, null), (140, 1, Tools.Anim.EaseOut));
+        }
+        else
+        {
+            width = Keys((0, 1, null), (200, 0.12, Tools.Anim.EaseIn));
+            length = Keys((0, 1, null), (60, 1, null), (280, 0.03, Tools.Anim.EaseIn));
+            fade = Keys((0, 1, null), (180, 1, null), (280, 0, Tools.Anim.EaseIn));
+        }
+
+        // Termina quando a animação mais longa acaba (e só se nenhuma outra começou depois).
+        var token = ++_panelAnimToken;
+        (show ? width : fade).Completed += (_, _) =>
+        {
+            if (token != _panelAnimToken) return;
+            ExpandedPanel.CacheMode = null;
+            if (show)
+            {
+                // Tira as animações para o painel ficar "normal" (sem custo extra).
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                ExpandedPanel.RenderTransform = Transform.Identity;
+            }
+            onDone?.Invoke();
         };
-        ExpandedPanel.RenderTransform = new TransformGroup { Children = { scale, translate } };
-
-        var duration = show ? 260 : 150;
-        DoubleAnimation Anim(double from, double to) => Tools.Anim.FromTo(from, to, duration);
-
-        var fade = Anim(show ? 0 : 1, show ? 1 : 0);
-        if (onDone is not null) fade.Completed += (_, _) => onDone();
 
         ExpandedPanel.BeginAnimation(OpacityProperty, fade);
-        translate.BeginAnimation(TranslateTransform.XProperty, Anim(show ? fromX : 0, show ? 0 : fromX));
-        translate.BeginAnimation(TranslateTransform.YProperty, Anim(show ? fromY : 0, show ? 0 : fromY));
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim(show ? 0.97 : 1, show ? 1 : 0.97));
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim(show ? 0.97 : 1, show ? 1 : 0.97));
+        scale.BeginAnimation(lengthProp, length);
+        scale.BeginAnimation(widthProp, width);
+    }
+
+    private int _panelAnimToken;
+
+    /// <summary>Animação por quadros-chave (tempo em ms, valor, suavização).</summary>
+    private static DoubleAnimationUsingKeyFrames Keys(params (double Ms, double Value, IEasingFunction? Ease)[] frames)
+    {
+        var animation = new DoubleAnimationUsingKeyFrames();
+        foreach (var (ms, value, ease) in frames)
+            animation.KeyFrames.Add(new EasingDoubleKeyFrame(value,
+                KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(Tools.Anim.Enabled ? ms : 0)), ease));
+        return animation;
     }
 
     private void AnimateHandleIn()
@@ -236,11 +294,18 @@ public partial class MainWindow : Window
         {
             // Avatar: alça vira um círculo (ou pílula com o tempo) com borda na cor de destaque.
             CollapsedHandle.Padding = new Thickness(_handleHasText ? 4 : 3);
+            CollapsedHandle.Margin = _settings.Edge switch
+            {
+                DockEdge.Top => new Thickness(0, EdgeGap, 0, 0),
+                DockEdge.Left => new Thickness(EdgeGap, 0, 0, 0),
+                _ => new Thickness(0, 0, EdgeGap, 0),
+            };
             CollapsedHandle.CornerRadius = new CornerRadius(_handleHasText ? 16 : AvatarCircle / 2);
         }
         else
         {
             CollapsedHandle.Padding = new Thickness(0);
+            CollapsedHandle.Margin = new Thickness(0);
             CollapsedHandle.CornerRadius = _settings.Edge switch
             {
                 DockEdge.Top => new CornerRadius(0, 0, 8, 8),
@@ -327,8 +392,8 @@ public partial class MainWindow : Window
             if (_hasAvatar)
             {
                 // Círculo do avatar (ou pílula avatar + tempo).
-                width = _handleHasText ? 108 : AvatarCircle;
-                height = _handleHasText ? 32 : AvatarCircle;
+                width = (_handleHasText ? 108 : AvatarCircle) + (top ? 0 : EdgeGap);
+                height = (_handleHasText ? 32 : AvatarCircle) + (top ? EdgeGap : 0);
             }
             else if (_handleHasText)
             {
@@ -360,6 +425,83 @@ public partial class MainWindow : Window
             Left = _settings.Edge == DockEdge.Left ? area.Left : area.Right - width;
         }
         HandleLayoutChanged?.Invoke();
+    }
+
+    /// <summary>Retângulo (em DIPs) da alça/avatar visível, para os mini widgets se alinharem.</summary>
+    public Rect HandleVisualRect
+    {
+        get
+        {
+            var m = CollapsedHandle.Margin;
+            return new Rect(Left + m.Left, Top + m.Top, Math.Max(0, Width - m.Left - m.Right), Math.Max(0, Height - m.Top - m.Bottom));
+        }
+    }
+
+    // ---------- Avatar some quando há uma janela embaixo dele ----------
+
+    private readonly DispatcherTimer _peek = new() { Interval = TimeSpan.FromMilliseconds(80) };
+    private readonly TranslateTransform _handleSlide = new();
+    private bool _handleHidden;
+    private DateTime _handleWantHideSince = DateTime.MaxValue;
+
+    /// <summary>
+    /// Como o dock do Mac: o avatar sai de cena quando uma janela fica embaixo dele e volta
+    /// ao levar o mouse até a borda. Fica sempre se houver widget de música/timer.
+    /// </summary>
+    private void Peek()
+    {
+        if (_expanded || !_settings.AvatarAutoHide || Widgets.WidgetManager.AnyShown)
+        {
+            _handleWantHideSince = DateTime.MaxValue;
+            if (_handleHidden) SlideHandle(show: true);
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        double sx = dpi.DpiScaleX, sy = dpi.DpiScaleY;
+        var rect = new Rect(Left * sx, Top * sy, Width * sx, Height * sy);
+        var (cx, cy) = Docking.Native.CursorPosition();
+        var area = SystemParameters.WorkArea;
+
+        if (_handleHidden)
+        {
+            var atEdge = _settings.Edge switch
+            {
+                DockEdge.Top => cy <= area.Top * sy + 2 && cx >= rect.Left - 60 && cx <= rect.Right + 60,
+                DockEdge.Left => cx <= area.Left * sx + 2 && cy >= rect.Top - 60 && cy <= rect.Bottom + 60,
+                _ => cx >= area.Right * sx - 3 && cy >= rect.Top - 60 && cy <= rect.Bottom + 60,
+            };
+            if (atEdge && !Docking.Native.IsForegroundFullscreen())
+            {
+                _handleWantHideSince = DateTime.MaxValue;
+                SlideHandle(show: true);
+            }
+            return;
+        }
+
+        var near = rect;
+        near.Inflate(24, 24);
+        var mouseNear = IsMouseOver || near.Contains(cx, cy);
+        var fg = Docking.Native.ForegroundAppRect();
+        var covered = fg is { } r && r.IntersectsWith(rect);
+        if (mouseNear || !covered)
+        {
+            _handleWantHideSince = DateTime.MaxValue;
+            return;
+        }
+        if (_handleWantHideSince == DateTime.MaxValue) _handleWantHideSince = DateTime.Now;
+        if (DateTime.Now - _handleWantHideSince > TimeSpan.FromMilliseconds(500)) SlideHandle(show: false);
+    }
+
+    private void SlideHandle(bool show)
+    {
+        if (_handleHidden == !show) return;
+        _handleHidden = !show;
+        var distance = (_settings.Edge == DockEdge.Top ? Height : Width) + 4;
+        var to = show ? 0 : _settings.Edge == DockEdge.Right ? distance : -distance;
+        var prop = _settings.Edge == DockEdge.Top ? TranslateTransform.YProperty : TranslateTransform.XProperty;
+        _handleSlide.BeginAnimation(_settings.Edge == DockEdge.Top ? TranslateTransform.XProperty : TranslateTransform.YProperty, null);
+        _handleSlide.BeginAnimation(prop, Tools.Anim.To(to, show ? 280 : 240, show ? Tools.Anim.Back : Tools.Anim.EaseIn));
     }
 
     /// <summary>Abre o painel fixado mostrando a ferramenta indicada.</summary>

@@ -24,6 +24,9 @@ public partial class App : Application
         _singleInstance = mutex;
 
         DispatcherUnhandledException += OnUnhandledException;
+        // Se o app fechar de repente, devolve a barra de tarefas do Windows.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => RestoreTaskbarSafe();
+        AppDomain.CurrentDomain.UnhandledException += (_, _) => RestoreTaskbarSafe();
         base.OnStartup(e);
 
         var settings = AppSettings.Load();
@@ -36,6 +39,19 @@ public partial class App : Application
         Widgets.WidgetManager.Start(window);
         Docking.DockWindow.Apply(settings);
         UpdateService.Instance.Start(e.Args);
+    }
+
+    private static void RestoreTaskbarSafe()
+    {
+        try
+        {
+            if (Assistente.App.MainWindow.Current is { } main && main.Settings.DockTaskbarWasAutoHide is not null)
+                Docking.DockWindow.RestoreTaskbar(main.Settings);
+        }
+        catch (Exception)
+        {
+            // Melhor esforço.
+        }
     }
 
     /// <summary>Depois de uma atualização, espera a versão antiga terminar de fechar.</summary>

@@ -21,7 +21,7 @@ public sealed class AppSettings
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private const int CurrentVersion = 2;
+    private const int CurrentVersion = 3;
 
     /// <summary>Versão do arquivo, para migrar preferências antigas.</summary>
     public int Version { get; set; }
@@ -106,8 +106,17 @@ public sealed class AppSettings
 
     /// <summary>Quanto o ícone cresce com o mouse em cima (1 = sem zoom).</summary>
     public double DockMagnify { get; set; } = 1.7;
+    /// <summary>Antigo (v0.8). Substituído por DockHideMode.</summary>
     public bool DockAutoHide { get; set; }
-    public bool DockHideTaskbar { get; set; }
+
+    /// <summary>"janela" = some quando uma janela encosta no dock (como no Mac); "sempre"; "nunca".</summary>
+    public string DockHideMode { get; set; } = "janela";
+
+    /// <summary>Esconde de vez a barra de tarefas do Windows enquanto o dock estiver ligado.</summary>
+    public bool DockHideTaskbar { get; set; } = true;
+
+    /// <summary>Mostrar o avatar só quando não houver janela embaixo dele (volta ao encostar o mouse no topo).</summary>
+    public bool AvatarAutoHide { get; set; } = true;
     public bool DockShowRunning { get; set; } = true;
 
     /// <summary>Programas fixados (caminho do .exe ou atalho .lnk). null = lista padrão.</summary>
@@ -128,9 +137,17 @@ public sealed class AppSettings
                 var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings();
                 if (settings.Version < CurrentVersion)
                 {
-                    // v2: o padrão passou a ser o topo da tela, centralizado.
-                    settings.Edge = DockEdge.Top;
-                    settings.Position = 0.5;
+                    if (settings.Version < 2)
+                    {
+                        // v2: o padrão passou a ser o topo da tela, centralizado.
+                        settings.Edge = DockEdge.Top;
+                        settings.Position = 0.5;
+                    }
+                    // v3: dock como no Mac (some quando uma janela encosta, sem a barra do Windows,
+                    // mostrando fixados e abertos).
+                    settings.DockHideMode = "janela";
+                    settings.DockHideTaskbar = true;
+                    settings.DockShowRunning = true;
                     settings.Version = CurrentVersion;
                     settings.Save();
                 }

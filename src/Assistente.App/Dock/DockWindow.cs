@@ -4,13 +4,12 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using Assistente.App.Services;
 using Assistente.App.Tools;
@@ -19,39 +18,42 @@ namespace Assistente.App.Docking;
 
 /// <summary>
 /// Dock no estilo do macOS: fica embaixo, centralizado, com os programas fixados e abertos.
-/// Os ícones crescem perto do mouse e uma bolinha marca os programas abertos.
+/// Os ícones crescem perto do mouse, uma bolinha marca os abertos, e ele some quando uma
+/// janela encosta nele (volta ao levar o mouse até a borda de baixo).
 /// </summary>
 public sealed class DockWindow : Window
 {
     public static DockWindow? Current { get; private set; }
 
-    private const double Gap = 8;
-    private const double SeparatorWidth = 13;
     private const double ShelfPad = 6;
-    private const double DotSpace = 8;
     private const double BottomMargin = 6;
     private const uint AppBarCallback = 0x0400 + 0x1D0; // WM_USER + n
 
     private readonly AppSettings _settings;
-    private readonly Grid _root = new();
     private readonly Border _shelf = new();
-    private readonly StackPanel _items = new() { Orientation = Orientation.Horizontal };
-    private readonly Border _hotStrip = new() { Height = 3, VerticalAlignment = VerticalAlignment.Bottom, Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)) };
+    private readonly Canvas _items = new();
+    private readonly Grid _content = new();
     private readonly TranslateTransform _slide = new();
-    private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromSeconds(1.5) };
-    private readonly DispatcherTimer _watch = new() { Interval = TimeSpan.FromMilliseconds(300) };
-    private readonly DispatcherTimer _anim = new() { Interval = TimeSpan.FromMilliseconds(15) };
-    private readonly DispatcherTimer _hideTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
+    private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _watch = new() { Interval = TimeSpan.FromMilliseconds(80) };
 
     private readonly List<DockItem> _entries = new();
+    private readonly Dictionary<string, ImageSource?> _storeIcons = new();
     private string _signature = "";
     private IntPtr _lastForeground;
     private IntPtr _hwnd;
     private bool _appBar;
     private bool _hidden;
     private bool _menuOpen;
-    private bool _fullscreenHidden;
+    private bool _refreshing;
+    private bool _animating;
     private double? _mouseX;
+    private DateTime _wantHideSince = DateTime.MaxValue;
+    private DateTime _lastTaskbarCheck;
+    private TimeSpan _lastFrame;
+    private int _barPx;
+    private Rect? _barRect;
+    private DateTime _lastBarChange;
 
     private DockWindow(AppSettings settings)
     {
@@ -74,42 +76,34 @@ public sealed class DockWindow : Window
         _shelf.Margin = new Thickness(0, 0, 0, BottomMargin);
         _shelf.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
         _shelf.SetResourceReference(Border.BorderBrushProperty, "BorderBrush");
-        _shelf.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 2, Opacity = 0.35 };
 
-        _items.VerticalAlignment = VerticalAlignment.Bottom;
-        _items.HorizontalAlignment = HorizontalAlignment.Center;
-        _items.Margin = new Thickness(0, 0, 0, BottomMargin + ShelfPad);
-        // Quase transparente: faz a faixa inteira receber o mouse (para o zoom).
+        // Quase transparente: a faixa inteira recebe o mouse (para o zoom).
         _items.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
-        _items.MouseMove += (_, e) => _mouseX = e.GetPosition(this).X;
-        _items.MouseLeave += (_, _) => _mouseX = null;
-        _items.SizeChanged += (_, _) => _shelf.Width = Math.Max(0, BaseWidth() + 2 * ShelfPad);
+        _items.VerticalAlignment = VerticalAlignment.Bottom;
+        _items.Margin = new Thickness(0, 0, 0, BottomMargin + ShelfPad);
+        _items.MouseMove += (_, e) =>
+        {
+            _mouseX = e.GetPosition(_items).X;
+            UpdateTargets();
+        };
+        _items.MouseLeave += (_, _) =>
+        {
+            _mouseX = null;
+            UpdateTargets();
+        };
 
-        var content = new Grid { RenderTransform = _slide };
-        content.Children.Add(_shelf);
-        content.Children.Add(_items);
-        _root.Children.Add(content);
-        _root.Children.Add(_hotStrip);
-        Content = _root;
-
-        MouseEnter += (_, _) =>
+        _items.SizeChanged += (_, _) =>
         {
-            _hideTimer.Stop();
-            if (_hidden) Reveal(true);
+            Layout();
+            UpdateTargets();
         };
-        MouseLeave += (_, _) =>
-        {
-            if (_settings.DockAutoHide) _hideTimer.Start();
-        };
-        _hideTimer.Tick += (_, _) =>
-        {
-            _hideTimer.Stop();
-            if (!IsMouseOver && !_menuOpen && _settings.DockAutoHide) Reveal(false);
-        };
+        _content.RenderTransform = _slide;
+        _content.Children.Add(_shelf);
+        _content.Children.Add(_items);
+        Content = _content;
 
         _refresh.Tick += (_, _) => RefreshApps();
         _watch.Tick += (_, _) => Watch();
-        _anim.Tick += (_, _) => Animate();
 
         SourceInitialized += (_, _) =>
         {
@@ -121,18 +115,20 @@ public sealed class DockWindow : Window
         {
             _refresh.Stop();
             _watch.Stop();
-            _anim.Stop();
+            StopAnimating();
             if (_appBar) Native.UnregisterBar(_hwnd);
             _appBar = false;
         };
         SystemParameters.StaticPropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(SystemParameters.WorkArea) && !_appBar) Dispatcher.BeginInvoke(new Action(Place));
+            if (e.PropertyName == nameof(SystemParameters.WorkArea) && !_appBar && IsLoaded) Dispatcher.BeginInvoke(new Action(() => Place(false)));
         };
     }
 
     private double IconSize => Math.Clamp(_settings.DockIconSize, 32, 80);
-    private double Magnify => Math.Clamp(_settings.DockMagnify, 1, 2.2);
+    private double Magnify => Anim.Enabled ? Math.Clamp(_settings.DockMagnify, 1, 2.2) : 1;
+    private string HideMode => _settings.DockHideMode is "sempre" or "nunca" ? _settings.DockHideMode : "janela";
+    private bool TaskbarHidden => _settings.DockHideTaskbar;
 
     // ---------- Ligar / desligar ----------
 
@@ -152,7 +148,6 @@ public sealed class DockWindow : Window
             Current.Show();
             Current._refresh.Start();
             Current._watch.Start();
-            Current._anim.Start();
         }
         Current._signature = "";
         Current.RefreshApps();
@@ -163,29 +158,16 @@ public sealed class DockWindow : Window
     {
         Current?.Close();
         Current = null;
-        if (settings.DockTaskbarWasAutoHide is { } original)
-        {
-            try { Native.TaskbarAutoHide = original; } catch (Exception) { /* sem barra? */ }
-            settings.DockTaskbarWasAutoHide = null;
-            settings.Save();
-        }
+        RestoreTaskbar(settings);
     }
 
-    private static void ApplyTaskbar(AppSettings settings)
+    /// <summary>Devolve a barra do Windows como estava (também usado se o app der erro).</summary>
+    public static void RestoreTaskbar(AppSettings settings)
     {
         try
         {
-            var wantHidden = settings.DockEnabled && settings.DockHideTaskbar;
-            if (wantHidden)
-            {
-                if (settings.DockTaskbarWasAutoHide is null)
-                {
-                    settings.DockTaskbarWasAutoHide = Native.TaskbarAutoHide;
-                    settings.Save();
-                }
-                if (!Native.TaskbarAutoHide) Native.TaskbarAutoHide = true;
-            }
-            else if (settings.DockTaskbarWasAutoHide is { } original)
+            Native.SetTaskbarVisible(true);
+            if (settings.DockTaskbarWasAutoHide is { } original)
             {
                 Native.TaskbarAutoHide = original;
                 settings.DockTaskbarWasAutoHide = null;
@@ -194,7 +176,34 @@ public sealed class DockWindow : Window
         }
         catch (Exception)
         {
-            // Sem barra de tarefas (ex.: outro shell): ignora.
+            // Sem barra de tarefas (ex.: outro shell).
+        }
+    }
+
+    private static void ApplyTaskbar(AppSettings settings)
+    {
+        try
+        {
+            if (settings.DockEnabled && settings.DockHideTaskbar)
+            {
+                if (settings.DockTaskbarWasAutoHide is null)
+                {
+                    settings.DockTaskbarWasAutoHide = Native.TaskbarAutoHide;
+                    settings.Save();
+                }
+                // "Ocultar automaticamente" libera o espaço da barra; esconder a janela dela
+                // impede que ela apareça ao encostar o mouse embaixo.
+                if (!Native.TaskbarAutoHide) Native.TaskbarAutoHide = true;
+                Native.SetTaskbarVisible(false);
+            }
+            else if (settings.DockTaskbarWasAutoHide is not null)
+            {
+                RestoreTaskbar(settings);
+            }
+        }
+        catch (Exception)
+        {
+            // Sem barra de tarefas: ignora.
         }
     }
 
@@ -228,11 +237,16 @@ public sealed class DockWindow : Window
 
     // ---------- Programas no dock ----------
 
-    private void RefreshApps()
+    /// <summary>Lista as janelas abertas numa thread separada (não trava a interface).</summary>
+    private async void RefreshApps()
     {
+        if (_refreshing) return;
+        _refreshing = true;
         List<OpenWindow> windows;
-        try { windows = Native.GetOpenWindows(); }
+        try { windows = await Task.Run(Native.GetOpenWindows); }
         catch (Exception) { windows = new(); }
+        finally { _refreshing = false; }
+        if (Current != this) return;
 
         var entries = new List<DockItem> { DockItem.StartButton() };
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -244,6 +258,7 @@ public sealed class DockWindow : Window
             entries.Add(new DockItem(key, path, Native.DisplayName(path)) { Windows = windows.Where(w => KeyFor(w) == key).ToList() });
         }
 
+        // Programas abertos que não estão fixados aparecem depois de um separador (como no Mac).
         if (_settings.DockShowRunning)
         {
             var running = windows.Where(w => !used.Contains(KeyFor(w))).GroupBy(KeyFor).ToList();
@@ -252,27 +267,24 @@ public sealed class DockWindow : Window
             {
                 var first = group.First();
                 var isStoreApp = IsStoreHost(first.ExePath);
-                var item = new DockItem(group.Key, isStoreApp ? null : first.ExePath, isStoreApp ? first.Title : Native.DisplayName(first.ExePath))
+                entries.Add(new DockItem(group.Key, isStoreApp ? null : first.ExePath, isStoreApp ? first.Title : Native.DisplayName(first.ExePath))
                 {
                     Windows = group.ToList(),
                     IconOverride = isStoreApp ? StoreIcon(group.Key, first.Handle) : null,
-                };
-                entries.Add(item);
+                });
             }
         }
 
-        var signature = string.Join("|", entries.Select(e => e.Key + ":" + (e.Windows.Count > 0 ? "1" : "0"))) + IconSize;
+        var signature = string.Join("|", entries.Select(e => e.Key)) + "#" + IconSize + Magnify + HideMode + TaskbarHidden;
         if (signature == _signature)
         {
-            // Mesmo conjunto: só atualiza a lista de janelas de cada item.
             for (var i = 0; i < entries.Count && i < _entries.Count; i++) _entries[i].Windows = entries[i].Windows;
+            UpdateDots();
             return;
         }
         _signature = signature;
         Rebuild(entries);
     }
-
-    private readonly Dictionary<string, ImageSource?> _storeIcons = new();
 
     private ImageSource? StoreIcon(string key, IntPtr hwnd)
     {
@@ -287,11 +299,11 @@ public sealed class DockWindow : Window
     private void Rebuild(List<DockItem> entries)
     {
         var old = _entries.ToDictionary(e => e.Key, e => e);
+        var first = _entries.Count == 0;
         _entries.Clear();
         _items.Children.Clear();
         foreach (var entry in entries)
         {
-            // Mantém o tamanho atual (zoom) de quem já estava no dock.
             if (old.TryGetValue(entry.Key, out var previous)) entry.Scale = previous.Scale;
             entry.Build(IconSize);
             if (!entry.IsSeparator)
@@ -305,37 +317,33 @@ public sealed class DockWindow : Window
             }
             _entries.Add(entry);
             _items.Children.Add(entry.View);
-            if (!old.ContainsKey(entry.Key) && old.Count > 0) Anim.Pop(entry.View);
+            if (!first && !old.ContainsKey(entry.Key) && !entry.IsSeparator) Anim.Pop(entry.View);
         }
-        _shelf.Height = IconSize + DotSpace + 2 * ShelfPad;
-        _hotStrip.Visibility = _settings.DockAutoHide ? Visibility.Visible : Visibility.Collapsed;
-        Place();
+        _items.Height = IconSize * Magnify + DockItem.DotSpace + 10;
+        _shelf.Height = IconSize + DockItem.DotSpace + 2 * ShelfPad;
+        Place(false);
+        Layout();
+        UpdateDots();
     }
 
-    private double BaseWidth() => _entries.Sum(e => e.IsSeparator ? SeparatorWidth : IconSize + Gap);
+    private double BaseWidth() => _entries.Sum(e => e.IsSeparator ? DockItem.SeparatorWidth : IconSize + DockItem.Gap);
 
     // ---------- Posição ----------
-
-    private int _barPx;
-    private Rect? _barRect;
-    private DateTime _lastBarChange;
-
-    private void Place() => Place(force: false);
 
     private void Place(bool force)
     {
         var s = IconSize;
         var width = BaseWidth() + 2 * ShelfPad + s * (Magnify - 1) * 3 + 40;
-        var height = s * Magnify + DotSpace + ShelfPad + BottomMargin + 30;
+        var height = s * Magnify + DockItem.DotSpace + ShelfPad + BottomMargin + 34;
         Width = width;
         Height = height;
 
         var dpi = VisualTreeHelper.GetDpi(this);
-        var reserve = !_settings.DockAutoHide && _hwnd != IntPtr.Zero;
         double bottom;
-        if (reserve)
+        if (HideMode == "nunca" && _hwnd != IntPtr.Zero)
         {
-            var barPx = (int)Math.Ceiling((s + DotSpace + 2 * ShelfPad + BottomMargin + 2) * dpi.DpiScaleY);
+            // Sempre visível: reserva o espaço (janelas maximizadas param acima do dock).
+            var barPx = (int)Math.Ceiling((s + DockItem.DotSpace + 2 * ShelfPad + BottomMargin + 2) * dpi.DpiScaleY);
             if (!_appBar || force || barPx != _barPx || _barRect is null)
             {
                 _barRect = Native.RegisterBottomBar(_hwnd, barPx, AppBarCallback, _appBar);
@@ -343,92 +351,206 @@ public sealed class DockWindow : Window
                 _barPx = barPx;
                 _lastBarChange = DateTime.Now;
             }
-            var rect = _barRect;
-            bottom = rect is { } r ? r.Bottom / dpi.DpiScaleY : SystemParameters.WorkArea.Bottom;
+            bottom = _barRect is { } r ? r.Bottom / dpi.DpiScaleY : SystemParameters.WorkArea.Bottom;
         }
         else
         {
             if (_appBar) Native.UnregisterBar(_hwnd);
             _appBar = false;
             _barRect = null;
-            bottom = SystemParameters.WorkArea.Bottom;
+            // Com a barra do Windows escondida o dock encosta na borda da tela.
+            bottom = TaskbarHidden ? SystemParameters.PrimaryScreenHeight : SystemParameters.WorkArea.Bottom;
         }
 
-        var screenW = SystemParameters.PrimaryScreenWidth;
-        Left = (screenW - width) / 2;
+        Left = (SystemParameters.PrimaryScreenWidth - width) / 2;
         Top = bottom - height;
-
-        if (_settings.DockAutoHide && !IsMouseOver) Reveal(false, animate: false);
-        else if (!_settings.DockAutoHide) Reveal(true, animate: false);
+        if (HideMode == "nunca") Reveal(true, animate: false);
     }
+
+    private double HiddenOffset => IconSize + DockItem.DotSpace + 2 * ShelfPad + BottomMargin + 6;
 
     private void Reveal(bool show, bool animate = true)
     {
+        if (_hidden == !show && animate) return;
         _hidden = !show;
-        var to = show ? 0 : IconSize + DotSpace + 2 * ShelfPad + BottomMargin + 4;
-        _slide.BeginAnimation(TranslateTransform.YProperty, animate ? Anim.To(to, show ? 220 : 260) : null);
-        if (!animate) _slide.Y = to;
+        if (!show)
+        {
+            _mouseX = null;
+            UpdateTargets();
+        }
+        var to = show ? 0 : HiddenOffset;
+        if (animate)
+        {
+            _slide.BeginAnimation(TranslateTransform.YProperty, Anim.To(to, show ? 260 : 300, show ? Anim.Back : Anim.EaseIn));
+        }
+        else
+        {
+            _slide.BeginAnimation(TranslateTransform.YProperty, null);
+            _slide.Y = to;
+        }
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        // A barra do Windows (ou outra) mudou: recalcula a faixa reservada. Ignora o aviso
-        // causado pela nossa própria mudança para não entrar em loop.
+        // Outra barra mudou: recalcula a faixa reservada (ignorando o aviso da nossa própria mudança).
         if (msg == AppBarCallback && wParam.ToInt32() == 1 /* ABN_POSCHANGED */ && _appBar &&
             DateTime.Now - _lastBarChange > TimeSpan.FromSeconds(1))
-            Dispatcher.BeginInvoke(new Action(() => Place(force: true)));
+            Dispatcher.BeginInvoke(new Action(() => Place(true)));
         return IntPtr.Zero;
     }
 
     // ---------- Zoom (efeito "lupa") ----------
 
-    private void Animate()
+    /// <summary>Calcula o zoom desejado de cada ícone pela distância até o mouse.</summary>
+    private void UpdateTargets()
     {
-        if (_entries.Count == 0) return;
         var s = IconSize;
-        var mag = Anim.Enabled ? Magnify : 1;
-        var x = (Width - BaseWidth()) / 2;
-        var range = s * 2.6;
-        var changed = false;
-
+        var mag = Magnify;
+        var x = (_items.ActualWidth - BaseWidth()) / 2;
+        var range = (s + DockItem.Gap) * 2.4;
         foreach (var entry in _entries)
         {
-            var w = entry.IsSeparator ? SeparatorWidth : s + Gap;
+            var w = entry.IsSeparator ? DockItem.SeparatorWidth : s + DockItem.Gap;
             var target = 1.0;
             if (_mouseX is { } mx && !entry.IsSeparator && mag > 1)
             {
                 var d = Math.Abs(mx - (x + w / 2));
                 if (d < range) target = 1 + (mag - 1) * (Math.Cos(d / range * Math.PI) + 1) / 2;
             }
+            entry.TargetScale = target;
             x += w;
-            if (Math.Abs(entry.Scale - target) > 0.002)
-            {
-                entry.Scale += (target - entry.Scale) * 0.3;
-                entry.ApplyScale(s);
-                changed = true;
-            }
         }
-        if (changed) _shelf.Width = BaseWidth() + 2 * ShelfPad + _entries.Sum(e => e.IsSeparator ? 0 : (e.Scale - 1) * s);
+        StartAnimating();
     }
 
-    // ---------- Cliques ----------
+    private void StartAnimating()
+    {
+        if (_animating) return;
+        _animating = true;
+        _lastFrame = TimeSpan.Zero;
+        CompositionTarget.Rendering += OnFrame;
+    }
+
+    private void StopAnimating()
+    {
+        if (!_animating) return;
+        _animating = false;
+        CompositionTarget.Rendering -= OnFrame;
+    }
+
+    /// <summary>Uma vez por quadro (sincronizado com a tela) enquanto o zoom estiver mudando.</summary>
+    private void OnFrame(object? sender, EventArgs e)
+    {
+        var now = e is RenderingEventArgs r ? r.RenderingTime : TimeSpan.Zero;
+        var dt = _lastFrame == TimeSpan.Zero ? 1 / 60.0 : Math.Clamp((now - _lastFrame).TotalSeconds, 0, 0.05);
+        if (now == _lastFrame && _lastFrame != TimeSpan.Zero) return; // mesmo quadro
+        _lastFrame = now;
+
+        var k = 1 - Math.Exp(-dt * 20);
+        var moving = false;
+        foreach (var entry in _entries)
+        {
+            var diff = entry.TargetScale - entry.Scale;
+            if (Math.Abs(diff) < 0.001)
+            {
+                if (entry.Scale != entry.TargetScale)
+                {
+                    entry.Scale = entry.TargetScale;
+                    entry.ApplyScale();
+                }
+                continue;
+            }
+            entry.Scale += diff * k;
+            entry.ApplyScale();
+            moving = true;
+        }
+        Layout();
+        if (!moving) StopAnimating();
+    }
+
+    /// <summary>Posiciona os ícones lado a lado (com o zoom atual), centralizados.</summary>
+    private void Layout()
+    {
+        var s = IconSize;
+        var total = _entries.Sum(e => e.SlotWidth(s));
+        var x = (_items.ActualWidth > 0 ? _items.ActualWidth : Width) / 2 - total / 2;
+        foreach (var entry in _entries)
+        {
+            var slot = entry.SlotWidth(s);
+            var w = entry.IsSeparator ? DockItem.SeparatorWidth : s + DockItem.Gap;
+            Canvas.SetLeft(entry.View, x + slot / 2 - w / 2);
+            Canvas.SetBottom(entry.View, 0);
+            x += slot;
+        }
+        _shelf.Width = Math.Max(0, total + 2 * ShelfPad);
+    }
+
+    // ---------- Mostrar / esconder ----------
 
     private void Watch()
     {
         var fg = Native.Foreground;
-        if (fg != IntPtr.Zero && Native.GetWindowProcessId(fg) != (uint)Environment.ProcessId) _lastForeground = fg;
-
-        // Some quando um jogo/vídeo está em tela cheia.
-        var full = fg != IntPtr.Zero && fg == _lastForeground && Native.IsForegroundFullscreen();
-        if (full != _fullscreenHidden)
+        if (fg != IntPtr.Zero && fg != _lastForeground && Native.GetWindowProcessId(fg) != (uint)Environment.ProcessId)
         {
-            _fullscreenHidden = full;
-            BeginAnimation(OpacityProperty, Anim.To(full ? 0 : 1, 180));
-            IsHitTestVisible = !full;
+            _lastForeground = fg;
+            UpdateDots();
         }
 
+        // O Explorer às vezes mostra a barra de novo: esconde outra vez (menos com o Iniciar aberto).
+        if (TaskbarHidden && DateTime.Now - _lastTaskbarCheck > TimeSpan.FromSeconds(1))
+        {
+            _lastTaskbarCheck = DateTime.Now;
+            if (Native.AnyTaskbarVisible() && !Native.IsShellUiForeground()) Native.SetTaskbarVisible(false);
+        }
+
+        if (HideMode == "nunca" || !IsLoaded) return;
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var (cx, cy) = Native.CursorPosition();
+        var (_, screenH) = Native.PrimaryScreenPixels();
+        var shelfLeft = (Left + (Width - _shelf.ActualWidth) / 2) * dpi.DpiScaleX;
+        var shelfRight = shelfLeft + _shelf.ActualWidth * dpi.DpiScaleX;
+        var dockTop = (Top + Height - BottomMargin - _shelf.ActualHeight) * dpi.DpiScaleY;
+        var dockBottom = (Top + Height) * dpi.DpiScaleY;
+        var fullscreen = Native.IsForegroundFullscreen();
+
+        if (_hidden)
+        {
+            // Mouse na borda de baixo, na altura do dock: aparece.
+            if (!fullscreen && cy >= screenH - 3 && cx >= shelfLeft - 40 && cx <= shelfRight + 40)
+            {
+                _wantHideSince = DateTime.MaxValue;
+                Reveal(true);
+            }
+            return;
+        }
+
+        var mouseOnDock = cx >= shelfLeft - 10 && cx <= shelfRight + 10 && cy >= dockTop - IconSize * (Magnify - 1) - 10 && cy <= dockBottom + 2;
+        bool wantHide;
+        if (mouseOnDock || _menuOpen) wantHide = false;
+        else if (fullscreen || HideMode == "sempre") wantHide = true;
+        else
+        {
+            // Como no Mac: some quando a janela em primeiro plano encosta no dock.
+            var rect = Native.ForegroundAppRect();
+            wantHide = rect is { } r && r.Right > shelfLeft && r.Left < shelfRight && r.Bottom > dockTop && r.Top < dockBottom;
+        }
+
+        if (!wantHide)
+        {
+            _wantHideSince = DateTime.MaxValue;
+            return;
+        }
+        if (_wantHideSince == DateTime.MaxValue) _wantHideSince = DateTime.Now;
+        if (DateTime.Now - _wantHideSince > TimeSpan.FromMilliseconds(mouseOnDock ? 0 : 350)) Reveal(false);
+    }
+
+    private void UpdateDots()
+    {
         foreach (var entry in _entries) entry.SetRunning(entry.Windows.Count > 0, entry.Windows.Any(w => w.Handle == _lastForeground));
     }
+
+    // ---------- Cliques ----------
 
     private void OnClick(DockItem entry)
     {
@@ -437,7 +559,7 @@ public sealed class DockWindow : Window
             Native.OpenStartMenu();
             return;
         }
-        var windows = entry.Windows.Where(w => IsAlive(w.Handle)).ToList();
+        var windows = entry.Windows.Where(w => Native.GetWindowProcessId(w.Handle) != 0).ToList();
         if (windows.Count == 0)
         {
             Launch(entry);
@@ -445,19 +567,19 @@ public sealed class DockWindow : Window
         }
 
         var index = windows.FindIndex(w => w.Handle == _lastForeground);
-        IntPtr target;
         if (windows.Count == 1 && index == 0 && !Native.IsMinimized(windows[0].Handle))
         {
             Native.Minimize(windows[0].Handle);
             _lastForeground = IntPtr.Zero;
-            return;
         }
-        target = index >= 0 ? windows[(index + 1) % windows.Count].Handle : windows[0].Handle;
-        Native.Activate(target);
-        _lastForeground = target;
+        else
+        {
+            var target = index >= 0 ? windows[(index + 1) % windows.Count].Handle : windows[0].Handle;
+            Native.Activate(target);
+            _lastForeground = target;
+        }
+        UpdateDots();
     }
-
-    private static bool IsAlive(IntPtr hwnd) => Native.GetWindowProcessId(hwnd) != 0;
 
     private void Launch(DockItem entry)
     {
@@ -478,11 +600,7 @@ public sealed class DockWindow : Window
     {
         var menu = new ContextMenu();
         menu.Opened += (_, _) => _menuOpen = true;
-        menu.Closed += (_, _) =>
-        {
-            _menuOpen = false;
-            if (_settings.DockAutoHide && !IsMouseOver) _hideTimer.Start();
-        };
+        menu.Closed += (_, _) => _menuOpen = false;
 
         MenuItem Item(string header, Action action)
         {
@@ -494,7 +612,7 @@ public sealed class DockWindow : Window
         if (entry.IsStart)
         {
             menu.Items.Add(Item("Configurações do dock…", () => SettingsWindow.Open("Dock")));
-            menu.Items.Add(Item("Esconder o dock", () =>
+            menu.Items.Add(Item("Desligar o dock", () =>
             {
                 _settings.DockEnabled = false;
                 _settings.Save();
@@ -527,7 +645,6 @@ public sealed class DockWindow : Window
 
         menu.Opened += (_, _) =>
         {
-            // Opções de janela só quando há janelas abertas.
             foreach (var old in menu.Items.OfType<MenuItem>().Where(i => i.Tag is "win").ToList()) menu.Items.Remove(old);
             var count = entry.Windows.Count;
             if (count == 0) return;

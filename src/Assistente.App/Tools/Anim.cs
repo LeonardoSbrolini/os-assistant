@@ -15,6 +15,8 @@ public static class Anim
     public static bool Enabled { get; set; } = true;
 
     public static readonly IEasingFunction EaseOut = new CubicEase { EasingMode = EasingMode.EaseOut };
+    public static readonly IEasingFunction EaseIn = new CubicEase { EasingMode = EasingMode.EaseIn };
+    public static readonly IEasingFunction EaseInOut = new CubicEase { EasingMode = EasingMode.EaseInOut };
     public static readonly IEasingFunction Back = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.4 };
 
     public static Duration D(double ms) => new(TimeSpan.FromMilliseconds(Enabled ? ms : 0));
@@ -55,9 +57,13 @@ public static class Anim
             FadeUp(view);
             return;
         }
+        // Só os primeiros blocos entram em cascata (o resto aparece junto): mais leve.
         var i = 0;
         foreach (UIElement child in panel.Children)
-            FadeUp(child, delayMs: Math.Min(i++, 12) * 35);
+        {
+            if (i < 8) FadeUp(child, delayMs: i * 30, offset: 10);
+            i++;
+        }
     }
 
     private static Panel? FindStack(DependencyObject root)

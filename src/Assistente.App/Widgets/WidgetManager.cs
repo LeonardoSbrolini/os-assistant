@@ -28,6 +28,9 @@ public static class WidgetManager
         Refresh();
     }
 
+    /// <summary>Algum widget aparecendo agora (o avatar não se esconde nesse caso).</summary>
+    public static bool AnyShown => _music?.IsVisible == true || _time?.IsVisible == true;
+
     public static void Refresh()
     {
         var main = MainWindow.Current;

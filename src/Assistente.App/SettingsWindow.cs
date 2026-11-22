@@ -206,6 +206,10 @@ public sealed class SettingsWindow : Window
         music.FontSize = 14;
         music.Margin = new Thickness(0, 0, 0, 10);
         music.Click += (_, _) => { _settings.MusicWidget = music.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
+        var avatarHide = Ui.Check("Esconder o avatar quando uma janela estiver embaixo dele (volta ao levar o mouse até o topo)", _settings.AvatarAutoHide);
+        avatarHide.FontSize = 14;
+        avatarHide.Margin = new Thickness(0, 0, 0, 10);
+        avatarHide.Click += (_, _) => { _settings.AvatarAutoHide = avatarHide.IsChecked == true; _settings.Save(); };
         var time = Ui.Check("Widget de timer e cronômetro à esquerda do avatar", _settings.TimeWidget);
         time.FontSize = 14;
         time.Click += (_, _) => { _settings.TimeWidget = time.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
@@ -213,7 +217,7 @@ public sealed class SettingsWindow : Window
         return Page("Geral",
             Ui.Card("Inicialização", "", startup,
                 Ui.Caption("Quando ligado, o Assistente abre sozinho assim que você entra no Windows.")),
-            Ui.Card("Mini widgets", "\uE8A9", music, time,
+            Ui.Card("Avatar e mini widgets", "\uE8A9", avatarHide, music, time,
                 Ui.Caption("Aparecem ao lado do avatar com o painel fechado, para controlar a música e o timer sem abrir o Assistente.")),
             Ui.Card("Comportamento", "", delay));
     }
@@ -416,7 +420,16 @@ public sealed class SettingsWindow : Window
 
         var enabled = Toggle("Mostrar o dock embaixo da tela", _settings.DockEnabled, v => _settings.DockEnabled = v);
         var hideTaskbar = Toggle("Esconder a barra de tarefas do Windows", _settings.DockHideTaskbar, v => _settings.DockHideTaskbar = v);
-        var autoHide = Toggle("Esconder o dock sozinho (aparece ao encostar o mouse embaixo)", _settings.DockAutoHide, v => _settings.DockAutoHide = v);
+        RadioButton Mode(string text, string value)
+        {
+            var radio = Ui.Radio(text, "dockhide", _settings.DockHideMode == value);
+            radio.Checked += (_, _) => DockChange(() => _settings.DockHideMode = value);
+            return radio;
+        }
+        var autoHide = new StackPanel();
+        autoHide.Children.Add(Mode("Some quando uma janela encosta nele (como no Mac)", "janela"));
+        autoHide.Children.Add(Mode("Sempre escondido (aparece ao levar o mouse para baixo)", "sempre"));
+        autoHide.Children.Add(Mode("Sempre visível (janelas maximizadas param acima dele)", "nunca"));
         var running = Toggle("Mostrar também os programas abertos que não estão fixados", _settings.DockShowRunning, v => _settings.DockShowRunning = v);
 
         var size = SliderRow("Tamanho dos ícones", 32, 72, _settings.DockIconSize,
@@ -514,10 +527,10 @@ public sealed class SettingsWindow : Window
                            "e uma bolinha mostra quais estão abertos. Clique para abrir ou alternar; botão direito para mais opções; " +
                            "botão do meio abre uma nova janela.")),
             Ui.Card("Barra do Windows", "\uE737", hideTaskbar,
-                Ui.Caption("Liga o \"ocultar automaticamente\" da barra de tarefas do Windows: ela some e só aparece se você encostar o mouse embaixo. " +
+                Ui.Caption("A barra do Windows some de vez (nem aparece ao encostar o mouse embaixo); quem aparece é o dock. " +
                            "O botão com 4 quadrados no dock abre o menu Iniciar. Ao desligar (ou fechar o Assistente) a barra volta ao normal.")),
-            Ui.Card("Comportamento", "\uE713", autoHide, running,
-                Ui.Caption("Com o dock sempre visível, as janelas maximizadas param acima dele, como no Mac.")),
+            Ui.Card("Quando esconder o dock", "\uE713", autoHide, running,
+                Ui.Caption("Escondido, ele volta quando você leva o mouse até a borda de baixo da tela.")),
             Ui.Card("Tamanho", "\uE740", size, zoom),
             Ui.Card("Programas fixados", "\uE718", list, Ui.Inline(add, reset),
                 Ui.Caption("Dica: no próprio dock, clique com o botão direito num programa aberto e escolha \"Manter no dock\".")));
