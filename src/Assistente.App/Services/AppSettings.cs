@@ -21,7 +21,7 @@ public sealed class AppSettings
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private const int CurrentVersion = 3;
+    private const int CurrentVersion = 4;
 
     /// <summary>Versão do arquivo, para migrar preferências antigas.</summary>
     public int Version { get; set; }
@@ -113,11 +113,21 @@ public sealed class AppSettings
     public string DockHideMode { get; set; } = "janela";
 
     /// <summary>Esconde de vez a barra de tarefas do Windows enquanto o dock estiver ligado.</summary>
-    public bool DockHideTaskbar { get; set; } = true;
+    public bool DockHideTaskbar { get; set; }
+
+    /// <summary>Valores originais da barra do Windows antes do "visual Mac" (para restaurar).</summary>
+    public System.Collections.Generic.Dictionary<string, int>? TaskbarOriginal { get; set; }
+    public bool? TaskbarAutoHideOriginal { get; set; }
+
+    /// <summary>Aplicar o visual Mac na barra do Windows na próxima abertura (uma vez).</summary>
+    public bool ApplyMacTaskbarOnStart { get; set; }
 
     /// <summary>Mostrar o avatar só quando não houver janela embaixo dele (volta ao encostar o mouse no topo).</summary>
     public bool AvatarAutoHide { get; set; } = true;
     public bool DockShowRunning { get; set; } = true;
+
+    /// <summary>Wi‑Fi, volume, bateria e relógio no canto direito do dock.</summary>
+    public bool DockShowTray { get; set; } = true;
 
     /// <summary>Programas fixados (caminho do .exe ou atalho .lnk). null = lista padrão.</summary>
     public System.Collections.Generic.List<string>? DockPinned { get; set; }
@@ -143,11 +153,15 @@ public sealed class AppSettings
                         settings.Edge = DockEdge.Top;
                         settings.Position = 0.5;
                     }
-                    // v3: dock como no Mac (some quando uma janela encosta, sem a barra do Windows,
-                    // mostrando fixados e abertos).
-                    settings.DockHideMode = "janela";
-                    settings.DockHideTaskbar = true;
-                    settings.DockShowRunning = true;
+                    if (settings.Version < 3)
+                    {
+                        settings.DockHideMode = "janela";
+                        settings.DockShowRunning = true;
+                    }
+                    // v4: nunca mais esconder a barra do Windows (ela é deixada com cara de Mac).
+                    settings.DockHideTaskbar = false;
+                    settings.DockEnabled = false;
+                    settings.ApplyMacTaskbarOnStart = true;
                     settings.Version = CurrentVersion;
                     settings.Save();
                 }

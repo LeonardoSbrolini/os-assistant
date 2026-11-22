@@ -70,8 +70,20 @@ public sealed class MusicWidget : MiniWidget
         Refresh();
     }
 
+    /// <summary>Música que o usuário fechou: o player só volta quando mudar de música.</summary>
+    private string? _dismissed;
+
+    private string CurrentKey => Media.AppName + "|" + Media.Title;
+
     public override bool HasSomething =>
-        Media.HasSession && (Media.IsPlaying || DateTime.Now - Media.LastPlayingAt < HideAfterPause);
+        Media.HasSession && _dismissed != CurrentKey &&
+        (Media.IsPlaying || DateTime.Now - Media.LastPlayingAt < HideAfterPause);
+
+    private void Dismiss()
+    {
+        _dismissed = CurrentKey;
+        WidgetManager.Refresh();
+    }
 
     private void Refresh()
     {

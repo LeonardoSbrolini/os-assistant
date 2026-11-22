@@ -66,6 +66,7 @@ public sealed class SettingsWindow : Window
         _pages["Aparência"] = AppearancePage;
         _pages["Avatar"] = AvatarPage;
         _pages["Posição"] = PositionPage;
+        _pages["Barra de tarefas"] = TaskbarPage;
         _pages["Dock"] = DockPage;
         _pages["Chat IA"] = ChatPage;
         _pages["Atualizações"] = UpdatesPage;
@@ -73,7 +74,7 @@ public sealed class SettingsWindow : Window
         var glyphs = new Dictionary<string, string>
         {
             ["Geral"] = "", ["Aparência"] = "", ["Avatar"] = "",
-            ["Dock"] = "\uE7C4", ["Posição"] = "", ["Chat IA"] = "", ["Atualizações"] = "",
+            ["Barra de tarefas"] = "\uE737", ["Dock"] = "\uE7C4", ["Posição"] = "", ["Chat IA"] = "", ["Atualizações"] = "",
         };
         foreach (var name in _pages.Keys)
         {
@@ -400,6 +401,65 @@ public sealed class SettingsWindow : Window
             Ui.Card("Borda da tela", "", Ui.Inline(top, right, left), position));
     }
 
+    private FrameworkElement TaskbarPage()
+    {
+        var status = Ui.Caption("");
+        var list = new StackPanel();
+        var boxes = new List<(CheckBox Box, TaskbarStyle.Option Option)>();
+        foreach (var option in TaskbarStyle.Options)
+        {
+            var opt = option;
+            var box = Ui.Check(opt.Label, TaskbarStyle.IsMac(opt));
+            box.FontSize = 14;
+            box.Margin = new Thickness(0, 0, 0, 10);
+            box.Click += (_, _) =>
+            {
+                var ok = TaskbarStyle.Set(_settings, opt, box.IsChecked == true);
+                box.IsChecked = TaskbarStyle.IsMac(opt);
+                status.Text = ok ? "Pronto. Se a barra não mudar, clique em \"Reiniciar a barra\"." : "O Windows não deixou mudar essa opção neste computador.";
+            };
+            boxes.Add((box, opt));
+            list.Children.Add(box);
+        }
+
+        var autoHide = Ui.Check("Ocultar automaticamente (aparece ao levar o mouse para baixo, como no Mac)", TaskbarStyle.AutoHide);
+        autoHide.FontSize = 14;
+        autoHide.Click += (_, _) => TaskbarStyle.SetAutoHide(_settings, autoHide.IsChecked == true);
+
+        void Sync()
+        {
+            foreach (var (box, opt) in boxes) box.IsChecked = TaskbarStyle.IsMac(opt);
+            autoHide.IsChecked = TaskbarStyle.AutoHide;
+        }
+
+        var apply = Ui.Btn("Aplicar visual do Mac", () =>
+        {
+            var failed = TaskbarStyle.ApplyMacLook(_settings);
+            Sync();
+            status.Text = failed == 0 ? "Visual do Mac aplicado." : $"Aplicado (o Windows bloqueou {failed} opção(ões)).";
+        }, primary: true);
+        var restore = Ui.Btn("Voltar como era", () =>
+        {
+            TaskbarStyle.Restore(_settings);
+            Sync();
+            status.Text = "A barra voltou como estava antes.";
+        });
+        var restart = Ui.Btn("Reiniciar a barra", () =>
+        {
+            if (!Ui.Confirm("A barra de tarefas e as janelas do Explorador de Arquivos vão fechar e abrir de novo. Continuar?")) return;
+            TaskbarStyle.RestartExplorer();
+            status.Text = "Reiniciando a barra…";
+        });
+
+        return Page("Barra de tarefas",
+            Ui.Card("Barra do Windows com cara de Mac", "\uE737", list, Ui.Inline(apply, restore, restart), status,
+                Ui.Caption("Usa os ajustes oficiais do Windows (os mesmos de Configurações › Personalização › Barra de tarefas), " +
+                           "então a barra continua funcionando normal: Wi‑Fi, volume, relógio e bandeja ficam onde sempre estiveram. " +
+                           "O formato e a transparência da barra o Windows não deixa mudar sem programas que alteram o sistema.")),
+            Ui.Card("Esconder", "\uE7B3", autoHide,
+                Ui.Caption("A barra some quando você não está usando e volta ao encostar o mouse embaixo.")));
+    }
+
     private FrameworkElement DockPage()
     {
         void DockChange(Action update)
@@ -419,7 +479,7 @@ public sealed class SettingsWindow : Window
         }
 
         var enabled = Toggle("Mostrar o dock embaixo da tela", _settings.DockEnabled, v => _settings.DockEnabled = v);
-        var hideTaskbar = Toggle("Esconder a barra de tarefas do Windows", _settings.DockHideTaskbar, v => _settings.DockHideTaskbar = v);
+        var tray = Toggle("Wi‑Fi, volume, bateria e relógio no canto direito do dock", _settings.DockShowTray, v => _settings.DockShowTray = v);
         RadioButton Mode(string text, string value)
         {
             var radio = Ui.Radio(text, "dockhide", _settings.DockHideMode == value);
@@ -526,9 +586,8 @@ public sealed class SettingsWindow : Window
                 Ui.Caption("Barra embaixo e centralizada com os seus programas. Os ícones crescem quando o mouse passa, " +
                            "e uma bolinha mostra quais estão abertos. Clique para abrir ou alternar; botão direito para mais opções; " +
                            "botão do meio abre uma nova janela.")),
-            Ui.Card("Barra do Windows", "\uE737", hideTaskbar,
-                Ui.Caption("A barra do Windows some de vez (nem aparece ao encostar o mouse embaixo); quem aparece é o dock. " +
-                           "O botão com 4 quadrados no dock abre o menu Iniciar. Ao desligar (ou fechar o Assistente) a barra volta ao normal.")),
+            Ui.Card("Canto direito", "\uE701", tray,
+                Ui.Caption("Clique no Wi‑Fi/volume/bateria para abrir as configurações rápidas do Windows, e no relógio para ver notificações e calendário.")),
             Ui.Card("Quando esconder o dock", "\uE713", autoHide, running,
                 Ui.Caption("Escondido, ele volta quando você leva o mouse até a borda de baixo da tela.")),
             Ui.Card("Tamanho", "\uE740", size, zoom),

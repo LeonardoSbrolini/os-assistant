@@ -118,6 +118,8 @@ internal static class Native
         var cls = new StringBuilder(256);
         GetClassName(hwnd, cls, cls.Capacity);
         if (IgnoredClasses.Contains(cls.ToString())) return false;
+        // Janela maximizada ou com barra de título não é "tela cheia" (jogo/vídeo).
+        if (IsZoomed(hwnd) || (GetWindowLong(hwnd, GwlStyle) & WsCaption) == WsCaption) return false;
         if (!GetWindowRect(hwnd, out var r)) return false;
         var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
         var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
@@ -324,6 +326,15 @@ internal static class Native
         return new Rect(r.Left, r.Top, Math.Max(0, r.Right - r.Left), Math.Max(0, r.Bottom - r.Top));
     }
 
+    /// <summary>Aperta Windows + tecla (ex.: Win+A abre Wi‑Fi/volume, Win+N notificações e calendário).</summary>
+    public static void WinCombo(byte key)
+    {
+        keybd_event(VkLWin, 0, 0, UIntPtr.Zero);
+        keybd_event(key, 0, 0, UIntPtr.Zero);
+        keybd_event(key, 0, KeyEventKeyUp, UIntPtr.Zero);
+        keybd_event(VkLWin, 0, KeyEventKeyUp, UIntPtr.Zero);
+    }
+
     /// <summary>Abre o menu Iniciar (como apertar a tecla Windows).</summary>
     public static void OpenStartMenu()
     {
@@ -364,6 +375,8 @@ internal static class Native
 
     private const int GwOwner = 4;
     private const int GwlExStyle = -20;
+    private const int GwlStyle = -16;
+    private const int WsCaption = 0x00C00000;
     private const int WsExToolWindow = 0x00000080;
     private const int WsExAppWindow = 0x00040000;
     private const int DwmwaCloaked = 14;
@@ -422,6 +435,7 @@ internal static class Native
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextLength(IntPtr hwnd);

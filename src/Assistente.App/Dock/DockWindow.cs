@@ -196,8 +196,9 @@ public sealed class DockWindow : Window
                 if (!Native.TaskbarAutoHide) Native.TaskbarAutoHide = true;
                 Native.SetTaskbarVisible(false);
             }
-            else if (settings.DockTaskbarWasAutoHide is not null)
+            else
             {
+                // Garante que a barra do Windows esteja visível (a v0.9.0 escondia).
                 RestoreTaskbar(settings);
             }
         }
@@ -275,6 +276,16 @@ public sealed class DockWindow : Window
             }
         }
 
+        // Canto direito, como a barra do Mac/Windows: Wi‑Fi, volume, bateria e relógio.
+        if (_settings.DockShowTray)
+        {
+            entries.Add(DockItem.Separator("::sep2"));
+            entries.Add(DockItem.Glyph("::net", "\uE701", "Wi‑Fi, som e bateria (Win + A)", () => Native.WinCombo(0x41)));
+            entries.Add(DockItem.Glyph("::vol", "\uE767", "Volume (Win + A)", () => Native.WinCombo(0x41)));
+            if (HasBattery()) entries.Add(DockItem.Glyph("::bat", "\uE83F", "Bateria (Win + A)", () => Native.WinCombo(0x41)));
+            entries.Add(DockItem.Clock(() => Native.WinCombo(0x4E)));
+        }
+
         var signature = string.Join("|", entries.Select(e => e.Key)) + "#" + IconSize + Magnify + HideMode + TaskbarHidden;
         if (signature == _signature)
         {
@@ -284,6 +295,18 @@ public sealed class DockWindow : Window
         }
         _signature = signature;
         Rebuild(entries);
+    }
+
+    private static bool? _hasBattery;
+
+    private static bool HasBattery()
+    {
+        if (_hasBattery is null)
+        {
+            try { _hasBattery = System.Windows.Forms.SystemInformation.PowerStatus.BatteryChargeStatus != System.Windows.Forms.BatteryChargeStatus.NoSystemBattery; }
+            catch (Exception) { _hasBattery = false; }
+        }
+        return _hasBattery.Value;
     }
 
     private ImageSource? StoreIcon(string key, IntPtr hwnd)
@@ -313,7 +336,7 @@ public sealed class DockWindow : Window
                 {
                     if (e.ChangedButton == MouseButton.Middle) Launch(entry);
                 };
-                entry.View.ContextMenu = BuildMenu(entry);
+                if (entry.Action is null) entry.View.ContextMenu = BuildMenu(entry);
             }
             _entries.Add(entry);
             _items.Children.Add(entry.View);
@@ -326,7 +349,7 @@ public sealed class DockWindow : Window
         UpdateDots();
     }
 
-    private double BaseWidth() => _entries.Sum(e => e.IsSeparator ? DockItem.SeparatorWidth : IconSize + DockItem.Gap);
+    private double BaseWidth() => _entries.Sum(e => e.BaseWidth(IconSize));
 
     // ---------- Posição ----------
 
@@ -410,7 +433,7 @@ public sealed class DockWindow : Window
         var range = (s + DockItem.Gap) * 2.4;
         foreach (var entry in _entries)
         {
-            var w = entry.IsSeparator ? DockItem.SeparatorWidth : s + DockItem.Gap;
+            var w = entry.BaseWidth(s);
             var target = 1.0;
             if (_mouseX is { } mx && !entry.IsSeparator && mag > 1)
             {
@@ -477,7 +500,7 @@ public sealed class DockWindow : Window
         foreach (var entry in _entries)
         {
             var slot = entry.SlotWidth(s);
-            var w = entry.IsSeparator ? DockItem.SeparatorWidth : s + DockItem.Gap;
+            var w = entry.BaseWidth(s);
             Canvas.SetLeft(entry.View, x + slot / 2 - w / 2);
             Canvas.SetBottom(entry.View, 0);
             x += slot;
@@ -496,6 +519,8 @@ public sealed class DockWindow : Window
             UpdateDots();
         }
 
+        foreach (var entry in _entries) entry.Tick();
+
         // O Explorer às vezes mostra a barra de novo: esconde outra vez (menos com o Iniciar aberto).
         if (TaskbarHidden && DateTime.Now - _lastTaskbarCheck > TimeSpan.FromSeconds(1))
         {
@@ -507,7 +532,6 @@ public sealed class DockWindow : Window
 
         var dpi = VisualTreeHelper.GetDpi(this);
         var (cx, cy) = Native.CursorPosition();
-        var (_, screenH) = Native.PrimaryScreenPixels();
         var shelfLeft = (Left + (Width - _shelf.ActualWidth) / 2) * dpi.DpiScaleX;
         var shelfRight = shelfLeft + _shelf.ActualWidth * dpi.DpiScaleX;
         var dockTop = (Top + Height - BottomMargin - _shelf.ActualHeight) * dpi.DpiScaleY;
@@ -517,7 +541,7 @@ public sealed class DockWindow : Window
         if (_hidden)
         {
             // Mouse na borda de baixo, na altura do dock: aparece.
-            if (!fullscreen && cy >= screenH - 3 && cx >= shelfLeft - 40 && cx <= shelfRight + 40)
+            if (!fullscreen && cy >= dockBottom - 4 && cy <= dockBottom + 4 && cx >= shelfLeft - 40 && cx <= shelfRight + 40)
             {
                 _wantHideSince = DateTime.MaxValue;
                 Reveal(true);
@@ -557,6 +581,11 @@ public sealed class DockWindow : Window
         if (entry.IsStart)
         {
             Native.OpenStartMenu();
+            return;
+        }
+        if (entry.Action is { } action)
+        {
+            action();
             return;
         }
         var windows = entry.Windows.Where(w => Native.GetWindowProcessId(w.Handle) != 0).ToList();

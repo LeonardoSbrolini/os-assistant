@@ -37,7 +37,14 @@ internal sealed class DockItem
     }
 
     public static DockItem StartButton() => new("::start", null, "Iniciar") { IsStart = true };
-    public static DockItem Separator() => new("::sep", null, "") { IsSeparator = true };
+    public static DockItem Separator(string key = "::sep") => new(key, null, "") { IsSeparator = true };
+
+    /// <summary>Botão com ícone de símbolo (Wi‑Fi, volume...) que executa uma ação.</summary>
+    public static DockItem Glyph(string key, string glyph, string name, Action action) =>
+        new(key, null, name) { GlyphText = glyph, Action = action };
+
+    /// <summary>Relógio com data; clique abre notificações e calendário.</summary>
+    public static DockItem Clock(Action action) => new("::clock", null, "Notificações e calendário (Win + N)") { IsClock = true, Action = action };
 
     public string Key { get; }
     public string? LaunchPath { get; }
@@ -46,6 +53,11 @@ internal sealed class DockItem
     public bool IsSeparator { get; private init; }
     public List<OpenWindow> Windows { get; set; } = new();
     public ImageSource? IconOverride { get; init; }
+    public string? GlyphText { get; private init; }
+    public bool IsClock { get; private init; }
+    public Action? Action { get; private init; }
+    private TextBlock? _clockTime;
+    private TextBlock? _clockDate;
 
     /// <summary>Zoom atual (1 = normal) e o desejado (para onde a animação está indo).</summary>
     public double Scale { get; set; } = 1;
@@ -54,7 +66,10 @@ internal sealed class DockItem
     public FrameworkElement View => _view!;
 
     /// <summary>Largura que o item ocupa no dock com o zoom atual.</summary>
-    public double SlotWidth(double size) => IsSeparator ? SeparatorWidth : (size + Gap) * Scale;
+    public double SlotWidth(double size) => IsSeparator ? SeparatorWidth : (BaseWidth(size)) * Scale;
+
+    /// <summary>Largura sem zoom (o relógio é mais largo).</summary>
+    public double BaseWidth(double size) => IsSeparator ? SeparatorWidth : IsClock ? size * 1.5 + Gap : size + Gap;
 
     public void Build(double size)
     {
@@ -76,11 +91,42 @@ internal sealed class DockItem
             return;
         }
 
-        _view.Width = size + Gap;
+        _view.Width = BaseWidth(size);
         _view.Height = size + DotSpace;
         _view.Cursor = Cursors.Hand;
 
-        if (IsStart)
+        if (IsClock)
+        {
+            _clockTime = new TextBlock { FontSize = size * 0.3, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
+            _clockDate = new TextBlock { FontSize = size * 0.21, HorizontalAlignment = HorizontalAlignment.Center };
+            _clockTime.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
+            _clockDate.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
+            var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            stack.Children.Add(_clockTime);
+            stack.Children.Add(_clockDate);
+            var clock = new Border { CornerRadius = new CornerRadius(size * 0.24), Child = stack, Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)) };
+            _icon = clock;
+            Tick();
+        }
+        else if (GlyphText is not null)
+        {
+            var glyph = new Border
+            {
+                CornerRadius = new CornerRadius(size * 0.24),
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+                Child = new TextBlock
+                {
+                    Text = GlyphText,
+                    FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
+                    FontSize = size * 0.42,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            ((TextBlock)glyph.Child).SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
+            _icon = glyph;
+        }
+        else if (IsStart)
         {
             var start = new Border { CornerRadius = new CornerRadius(size * 0.24), Child = WindowsLogo(size * 0.42) };
             start.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
@@ -111,7 +157,7 @@ internal sealed class DockItem
             _icon = letter;
         }
 
-        _icon.Width = size;
+        _icon.Width = IsClock ? size * 1.5 : size;
         _icon.Height = size;
         _icon.VerticalAlignment = VerticalAlignment.Top;
         _icon.HorizontalAlignment = HorizontalAlignment.Center;
@@ -138,6 +184,19 @@ internal sealed class DockItem
         _view.PreviewMouseLeftButtonUp += (_, _) => _icon.Opacity = 1;
         _view.MouseLeave += (_, _) => _icon.Opacity = 1;
         ApplyScale();
+    }
+
+    /// <summary>Atualiza o relógio (chamado várias vezes por segundo; só muda o texto quando precisa).</summary>
+    public void Tick()
+    {
+        if (_clockTime is null || _clockDate is null) return;
+        var now = DateTime.Now;
+        var time = now.ToString("HH:mm");
+        if (_clockTime.Text != time)
+        {
+            _clockTime.Text = time;
+            _clockDate.Text = now.ToString("ddd dd/MM", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+        }
     }
 
     public void ApplyScale()

@@ -37,7 +37,14 @@ public partial class App : Application
         _tray = new TrayIcon(window, settings);
         MetricsService.Instance.Start();
         Widgets.WidgetManager.Start(window);
-        Docking.DockWindow.Apply(settings);
+        Docking.DockWindow.Apply(settings); // também devolve a barra do Windows se a v0.9.0 escondeu
+
+        if (settings.ApplyMacTaskbarOnStart)
+        {
+            settings.ApplyMacTaskbarOnStart = false;
+            TaskbarStyle.ApplyMacLook(settings);
+            settings.Save();
+        }
         UpdateService.Instance.Start(e.Args);
     }
 
