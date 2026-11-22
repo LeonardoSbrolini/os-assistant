@@ -1,8 +1,6 @@
 using System;
-using System.Media;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using Assistente.App.Services;
 using Assistente.Core.Text;
 
@@ -19,13 +17,13 @@ public sealed class TimerTool : ITool
 }
 
 /// <summary>
-/// Contagem regressiva. Continua rodando com o painel recolhido e,
-/// ao terminar, toca um som, mostra uma notificação e abre o painel.
+/// Contagem regressiva. A contagem fica no TimerService, então continua com o painel
+/// recolhido e pode ser controlada pelo mini widget ao lado do avatar.
 /// </summary>
 internal sealed class TimerView : UserControl
 {
-    private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(200) };
-    private readonly DispatcherTimer _alarm = new() { Interval = TimeSpan.FromSeconds(1.2) };
+    private static TimerService Timer => TimerService.Instance;
+
     private readonly TextBox _minutes = Ui.Input("5");
     private readonly TextBox _seconds = Ui.Input("0");
     private readonly TextBox _label = Ui.Input();
@@ -41,23 +39,15 @@ internal sealed class TimerView : UserControl
     private readonly TextBlock _status = Ui.Caption("");
     private readonly TextBlock _error = Ui.Error();
     private readonly Button _startPause;
-
-    private const string HandleSource = "timer";
-    private const string TimerGlyph = "\uE823";
-    private const string PauseGlyph = "\uE769";
-
-    private TimeSpan _total;
-    private TimeSpan _remaining;
-    private DateTime _endsAt;
-    private bool _running;
-    private int _alarmCount;
+    private readonly Button _mute;
+    private readonly Button _restart;
 
     public TimerView()
     {
         _startPause = Ui.Btn("Iniciar", StartPause, primary: true);
+        _mute = Ui.Btn("Silenciar alarme", Timer.MuteAlarm);
+        _restart = Ui.Btn("Recomeçar", Timer.Restart);
         _status.HorizontalAlignment = HorizontalAlignment.Center;
-        _tick.Tick += (_, _) => Update();
-        _alarm.Tick += (_, _) => RingAgain();
         Ui.OnEnter(StartPause, _minutes, _seconds);
         _minutes.TextChanged += (_, _) => PreviewInput();
         _seconds.TextChanged += (_, _) => PreviewInput();
@@ -80,14 +70,28 @@ internal sealed class TimerView : UserControl
             _status,
             Ui.Row(Ui.Field("Minutos", _minutes), Ui.Field("Segundos", _seconds), Ui.Field("Nome (opcional)", _label)),
             presets,
-            Ui.Row(_startPause, Ui.Btn("Zerar", Reset)),
+            Ui.Row(_startPause, _restart, Ui.Btn("Zerar", Timer.Reset)),
+            Ui.Inline(_mute),
             _error,
-            Ui.Caption("O timer continua contando com o painel recolhido. Quando acabar, você recebe um aviso e o painel abre sozinho.")));
+            Ui.Caption("O timer continua contando com o painel recolhido e aparece num mini widget à esquerda do avatar, " +
+                       "onde dá para pausar. Quando acabar, o alarme toca até você silenciar (no máximo 1 minuto).")));
+
+        Loaded += (_, _) =>
+        {
+            Timer.Changed += OnChanged;
+            Timer.Ticked += OnTick;
+            OnChanged();
+        };
+        Unloaded += (_, _) =>
+        {
+            Timer.Changed -= OnChanged;
+            Timer.Ticked -= OnTick;
+        };
     }
 
     private void SetPreset(int minutes)
     {
-        if (_running) return;
+        if (Timer.State is TimerState.Running or TimerState.Paused) return;
         _minutes.Text = minutes.ToString();
         _seconds.Text = "0";
         StartPause();
@@ -95,8 +99,8 @@ internal sealed class TimerView : UserControl
 
     private void PreviewInput()
     {
-        if (_running || _remaining > TimeSpan.Zero) return;
-        if (TryReadDuration(out var d)) _display.Text = Format(d);
+        if (Timer.State != TimerState.Idle) return;
+        if (TryReadDuration(out var d)) _display.Text = TimerService.Format(d);
     }
 
     private bool TryReadDuration(out TimeSpan duration)
@@ -113,102 +117,56 @@ internal sealed class TimerView : UserControl
 
     private void StartPause() => Ui.Safe(_error, () =>
     {
-        StopAlarm();
-        if (_running)
+        switch (Timer.State)
         {
-            // Pausar
-            _remaining = _endsAt - DateTime.Now;
-            _running = false;
-            _tick.Stop();
-            _startPause.Content = "Continuar";
-            _status.Text = "Pausado";
-            HandleStatus.Set(HandleSource, 0, PauseGlyph, Format(_remaining));
-            return;
+            case TimerState.Running:
+            case TimerState.Paused:
+                Timer.TogglePause();
+                break;
+            default:
+                if (!TryReadDuration(out var duration))
+                    throw new FormatException("Informe um tempo válido (minutos e/ou segundos).");
+                Timer.Start(duration, _label.Text);
+                break;
         }
-
-        if (_remaining <= TimeSpan.Zero)
-        {
-            if (!TryReadDuration(out var duration))
-                throw new FormatException("Informe um tempo válido (minutos e/ou segundos).");
-            _total = duration;
-            _remaining = duration;
-        }
-
-        _endsAt = DateTime.Now + _remaining;
-        _running = true;
-        _tick.Start();
-        _startPause.Content = "Pausar";
-        _status.Text = $"Termina às {_endsAt:HH:mm:ss}";
-        Update();
     });
 
-    private void Reset()
+    private void OnChanged()
     {
-        StopAlarm();
-        _running = false;
-        _tick.Stop();
-        _remaining = TimeSpan.Zero;
-        _progress.Value = 0;
-        _startPause.Content = "Iniciar";
-        _status.Text = "";
-        _display.Foreground = Ui.Res("TextBrush");
-        if (TryReadDuration(out var d)) _display.Text = Format(d);
-        HandleStatus.Clear(HandleSource);
-    }
-
-    private void Update()
-    {
-        var left = _endsAt - DateTime.Now;
-        if (left <= TimeSpan.Zero)
+        var state = Timer.State;
+        _startPause.Content = state switch
         {
-            Finish();
-            return;
+            TimerState.Running => "Pausar",
+            TimerState.Paused => "Continuar",
+            _ => "Iniciar",
+        };
+        _restart.Visibility = state == TimerState.Idle ? Visibility.Collapsed : Visibility.Visible;
+        _mute.Visibility = Timer.AlarmRinging ? Visibility.Visible : Visibility.Collapsed;
+        _display.Foreground = Ui.Res(state == TimerState.Finished ? "ErrorBrush" : "TextBrush");
+
+        var name = Timer.Label.Length > 0 ? Timer.Label : "Timer";
+        _status.Text = state switch
+        {
+            TimerState.Running => $"Termina às {Timer.EndsAt:HH:mm:ss}",
+            TimerState.Paused => "Pausado",
+            TimerState.Finished => $"{name}: tempo esgotado" + (Timer.AlarmRinging ? " · alarme tocando" : ""),
+            _ => "",
+        };
+
+        if (state == TimerState.Idle)
+        {
+            _progress.Value = 0;
+            if (TryReadDuration(out var d)) _display.Text = TimerService.Format(d);
         }
-        _display.Text = Format(left);
-        HandleStatus.Set(HandleSource, 0, TimerGlyph, Format(left));
-        _progress.Value = _total.TotalSeconds > 0 ? 1 - left.TotalSeconds / _total.TotalSeconds : 0;
+        else
+        {
+            OnTick();
+        }
     }
 
-    private void Finish()
+    private void OnTick()
     {
-        _running = false;
-        _tick.Stop();
-        _remaining = TimeSpan.Zero;
-        _display.Text = "00:00";
-        _display.Foreground = Ui.Res("ErrorBrush");
-        _progress.Value = 1;
-        _startPause.Content = "Iniciar";
-        HandleStatus.Clear(HandleSource);
-
-        var name = string.IsNullOrWhiteSpace(_label.Text) ? "Timer" : _label.Text.Trim();
-        _status.Text = $"{name}: tempo esgotado às {DateTime.Now:HH:mm}";
-
-        TrayIcon.Notify("⏰ Tempo esgotado", $"{name} ({Format(_total)}) terminou.");
-        MainWindow.Current?.ShowTool(TimerTool.ToolName);
-
-        _alarmCount = 0;
-        RingAgain();
-        _alarm.Start();
-    }
-
-    private void RingAgain()
-    {
-        SystemSounds.Exclamation.Play();
-        if (++_alarmCount >= 5) _alarm.Stop();
-    }
-
-    private void StopAlarm()
-    {
-        _alarm.Stop();
-        _display.Foreground = Ui.Res("TextBrush");
-    }
-
-    private static string Format(TimeSpan t)
-    {
-        var seconds = (long)Math.Ceiling(t.TotalSeconds);
-        var h = seconds / 3600;
-        var m = seconds % 3600 / 60;
-        var s = seconds % 60;
-        return h > 0 ? $"{h}:{m:00}:{s:00}" : $"{m:00}:{s:00}";
+        _display.Text = TimerService.Format(Timer.Remaining);
+        _progress.Value = Timer.State == TimerState.Finished ? 1 : Timer.Progress;
     }
 }

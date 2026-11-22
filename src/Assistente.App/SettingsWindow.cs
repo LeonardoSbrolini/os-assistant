@@ -201,9 +201,19 @@ public sealed class SettingsWindow : Window
         var delay = SliderRow("Tempo para recolher depois que o mouse sai", 150, 2000, _settings.CloseDelayMs,
             v => $"{v / 1000:0.0} s", v => _settings.CloseDelayMs = (int)v);
 
+        var music = Ui.Check("Widget de música à direita do avatar (quando algo estiver tocando)", _settings.MusicWidget);
+        music.FontSize = 14;
+        music.Margin = new Thickness(0, 0, 0, 10);
+        music.Click += (_, _) => { _settings.MusicWidget = music.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
+        var time = Ui.Check("Widget de timer e cronômetro à esquerda do avatar", _settings.TimeWidget);
+        time.FontSize = 14;
+        time.Click += (_, _) => { _settings.TimeWidget = time.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
+
         return Page("Geral",
             Ui.Card("Inicialização", "", startup,
                 Ui.Caption("Quando ligado, o Assistente abre sozinho assim que você entra no Windows.")),
+            Ui.Card("Mini widgets", "\uE8A9", music, time,
+                Ui.Caption("Aparecem ao lado do avatar com o painel fechado, para controlar a música e o timer sem abrir o Assistente.")),
             Ui.Card("Comportamento", "", delay));
     }
 

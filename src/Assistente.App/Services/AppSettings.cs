@@ -93,6 +93,12 @@ public sealed class AppSettings
     /// <summary>Procurar atualizações sozinho ao abrir e a cada 6 horas.</summary>
     public bool AutoUpdate { get; set; } = true;
 
+    /// <summary>Mostrar o mini widget de música ao lado do avatar quando algo estiver tocando.</summary>
+    public bool MusicWidget { get; set; } = true;
+
+    /// <summary>Mostrar o mini widget de timer/cronômetro ao lado do avatar.</summary>
+    public bool TimeWidget { get; set; } = true;
+
     /// <summary>Última ferramenta aberta.</summary>
     public string? LastTool { get; set; }
 

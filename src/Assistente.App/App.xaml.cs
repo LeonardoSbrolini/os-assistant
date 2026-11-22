@@ -33,6 +33,7 @@ public partial class App : Application
 
         _tray = new TrayIcon(window, settings);
         MetricsService.Instance.Start();
+        Widgets.WidgetManager.Start(window);
         UpdateService.Instance.Start(e.Args);
     }
 

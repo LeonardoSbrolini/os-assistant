@@ -27,6 +27,13 @@ public partial class MainWindow : Window
     private const double MinPanelWidth = 520;
     private const double MinPanelHeight = 360;
 
+    /// <summary>Tamanho do círculo do avatar na alça e da imagem dentro dele.</summary>
+    private const double AvatarCircle = 40;
+    private const double AvatarSize = 34;
+
+    /// <summary>A alça mudou de lugar/tamanho ou o painel abriu/fechou (os mini widgets se reposicionam).</summary>
+    public event Action? HandleLayoutChanged;
+
     /// <summary>Enquanto maior que zero, o painel não recolhe (ex.: diálogo de confirmação aberto).</summary>
     public static int SuppressCollapse { get; set; }
 
@@ -218,7 +225,7 @@ public partial class MainWindow : Window
 
         HandleAvatar.Source = avatar?.Image;
         HandleAvatar.Visibility = _hasAvatar ? Visibility.Visible : Visibility.Collapsed;
-        HandleAvatar.Width = HandleAvatar.Height = _handleHasText ? 26 : 44;
+        HandleAvatar.Width = HandleAvatar.Height = _handleHasText ? 24 : AvatarSize;
 
         HandleText.Visibility = _handleHasText ? Visibility.Visible : Visibility.Collapsed;
         HandleIcon.Visibility = _hasAvatar ? Visibility.Collapsed : Visibility.Visible;
@@ -229,7 +236,7 @@ public partial class MainWindow : Window
         {
             // Avatar: alça vira um círculo (ou pílula com o tempo) com borda na cor de destaque.
             CollapsedHandle.Padding = new Thickness(_handleHasText ? 4 : 3);
-            CollapsedHandle.CornerRadius = new CornerRadius(_handleHasText ? 17 : 25);
+            CollapsedHandle.CornerRadius = new CornerRadius(_handleHasText ? 16 : AvatarCircle / 2);
         }
         else
         {
@@ -320,8 +327,8 @@ public partial class MainWindow : Window
             if (_hasAvatar)
             {
                 // Círculo do avatar (ou pílula avatar + tempo).
-                width = _handleHasText ? 112 : 50;
-                height = _handleHasText ? 34 : 50;
+                width = _handleHasText ? 108 : AvatarCircle;
+                height = _handleHasText ? 32 : AvatarCircle;
             }
             else if (_handleHasText)
             {
@@ -352,6 +359,7 @@ public partial class MainWindow : Window
             Top = Math.Clamp(centerY - height / 2, area.Top, area.Bottom - height);
             Left = _settings.Edge == DockEdge.Left ? area.Left : area.Right - width;
         }
+        HandleLayoutChanged?.Invoke();
     }
 
     /// <summary>Abre o painel fixado mostrando a ferramenta indicada.</summary>

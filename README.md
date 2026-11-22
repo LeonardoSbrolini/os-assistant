@@ -23,7 +23,7 @@ Widget flutuante para Windows: fica como uma alça fina no topo da tela (central
 | Calculadoras | Porcentagem | X% de Y, quantos % é, variação, aumento/desconto |
 | Geradores | CPF, CNPJ e RG | Gera em lote (com ou sem pontuação, CPF por estado) e valida, inclusive o CNPJ alfanumérico |
 | Utilitários | Histórico de cópias | Guarda tudo que é copiado (Ctrl+C) enquanto o app está aberto, com busca; clique duplo copia de novo. Só em memória, ignora cópias marcadas por gerenciadores de senha |
-| Tempo | Timer | Contagem regressiva com atalhos (1 a 60 min); ao terminar toca som, mostra notificação e abre o painel |
+| Tempo | Timer | Contagem regressiva com atalhos (1 a 60 min); ao terminar o alarme toca até ser silenciado (máx. 1 min) e mostra notificação |
 | Tempo | Cronômetro | Iniciar/pausar, voltas, copiar voltas |
 | Utilitários | Gerador de senhas | Gerador criptográfico, escolha de caracteres |
 | Utilitários | UUID / GUID | Em lote, com opções de formato |
@@ -31,6 +31,10 @@ Widget flutuante para Windows: fica como uma alça fina no topo da tela (central
 | Música | Tocando agora | Controla YouTube Music, Spotify e outros players pelo controle de mídia do Windows: capa, título, progresso, tocar/pausar, anterior/próxima, volume |
 
 As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferramentas, Calculadoras, Tempo) e cada grupo tem sub-abas.
+
+**Mini widgets** (com o painel fechado, ao lado do avatar; dá para desligar em Configurações › Geral):
+- À direita: mini player quando há música tocando (capa, nome, anterior / tocar-pausar / próxima). Some depois de 10 min pausado.
+- À esquerda: timer ou cronômetro rodando, com pausar/continuar e parar. Quando o timer acaba: recomeçar ou silenciar o alarme.
 
 **Configurações** (botão ⚙ ou ícone da bandeja) abrem numa janela própria: iniciar com o Windows, temas, cor de destaque, transparência do painel e das janelas, tamanho, animações, **10 avatares originais** para a alça, posição, serviço de IA e atualizações.
 
