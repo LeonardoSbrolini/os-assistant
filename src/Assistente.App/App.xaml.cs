@@ -34,6 +34,7 @@ public partial class App : Application
         _tray = new TrayIcon(window, settings);
         MetricsService.Instance.Start();
         Widgets.WidgetManager.Start(window);
+        Docking.DockWindow.Apply(settings);
         UpdateService.Instance.Start(e.Args);
     }
 
@@ -52,6 +53,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        if (Assistente.App.MainWindow.Current is { } main) Docking.DockWindow.Shutdown(main.Settings);
         _tray?.Dispose();
         if (_singleInstance is not null)
         {

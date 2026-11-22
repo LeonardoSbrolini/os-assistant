@@ -99,6 +99,23 @@ public sealed class AppSettings
     /// <summary>Mostrar o mini widget de timer/cronômetro ao lado do avatar.</summary>
     public bool TimeWidget { get; set; } = true;
 
+    // ---------- Dock estilo Mac ----------
+
+    public bool DockEnabled { get; set; }
+    public double DockIconSize { get; set; } = 48;
+
+    /// <summary>Quanto o ícone cresce com o mouse em cima (1 = sem zoom).</summary>
+    public double DockMagnify { get; set; } = 1.7;
+    public bool DockAutoHide { get; set; }
+    public bool DockHideTaskbar { get; set; }
+    public bool DockShowRunning { get; set; } = true;
+
+    /// <summary>Programas fixados (caminho do .exe ou atalho .lnk). null = lista padrão.</summary>
+    public System.Collections.Generic.List<string>? DockPinned { get; set; }
+
+    /// <summary>Estado original do "ocultar automaticamente" da barra do Windows, para devolver depois.</summary>
+    public bool? DockTaskbarWasAutoHide { get; set; }
+
     /// <summary>Última ferramenta aberta.</summary>
     public string? LastTool { get; set; }
 

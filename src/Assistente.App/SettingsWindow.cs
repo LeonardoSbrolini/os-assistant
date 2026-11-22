@@ -66,13 +66,14 @@ public sealed class SettingsWindow : Window
         _pages["Aparência"] = AppearancePage;
         _pages["Avatar"] = AvatarPage;
         _pages["Posição"] = PositionPage;
+        _pages["Dock"] = DockPage;
         _pages["Chat IA"] = ChatPage;
         _pages["Atualizações"] = UpdatesPage;
 
         var glyphs = new Dictionary<string, string>
         {
             ["Geral"] = "", ["Aparência"] = "", ["Avatar"] = "",
-            ["Posição"] = "", ["Chat IA"] = "", ["Atualizações"] = "",
+            ["Dock"] = "\uE7C4", ["Posição"] = "", ["Chat IA"] = "", ["Atualizações"] = "",
         };
         foreach (var name in _pages.Keys)
         {
@@ -393,6 +394,133 @@ public sealed class SettingsWindow : Window
 
         return Page("Posição",
             Ui.Card("Borda da tela", "", Ui.Inline(top, right, left), position));
+    }
+
+    private FrameworkElement DockPage()
+    {
+        void DockChange(Action update)
+        {
+            update();
+            _settings.Save();
+            Docking.DockWindow.Apply(_settings);
+        }
+
+        CheckBox Toggle(string text, bool value, Action<bool> set)
+        {
+            var box = Ui.Check(text, value);
+            box.FontSize = 14;
+            box.Margin = new Thickness(0, 0, 0, 10);
+            box.Click += (_, _) => DockChange(() => set(box.IsChecked == true));
+            return box;
+        }
+
+        var enabled = Toggle("Mostrar o dock embaixo da tela", _settings.DockEnabled, v => _settings.DockEnabled = v);
+        var hideTaskbar = Toggle("Esconder a barra de tarefas do Windows", _settings.DockHideTaskbar, v => _settings.DockHideTaskbar = v);
+        var autoHide = Toggle("Esconder o dock sozinho (aparece ao encostar o mouse embaixo)", _settings.DockAutoHide, v => _settings.DockAutoHide = v);
+        var running = Toggle("Mostrar também os programas abertos que não estão fixados", _settings.DockShowRunning, v => _settings.DockShowRunning = v);
+
+        var size = SliderRow("Tamanho dos ícones", 32, 72, _settings.DockIconSize,
+            v => $"{v:0} px", v => { _settings.DockIconSize = Math.Round(v); Docking.DockWindow.Apply(_settings); });
+        var zoom = SliderRow("Zoom com o mouse em cima", 1, 2, _settings.DockMagnify,
+            v => v < 1.05 ? "Sem zoom" : $"{v:0.0}×", v => { _settings.DockMagnify = Math.Round(v, 2); Docking.DockWindow.Apply(_settings); });
+
+        var list = new StackPanel();
+        void Fill()
+        {
+            list.Children.Clear();
+            var pinned = _settings.DockPinned ??= Docking.DockWindow.DefaultPinned();
+            for (var i = 0; i < pinned.Count; i++)
+            {
+                var index = i;
+                var path = pinned[i];
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+                var icon = new Image { Source = Docking.Native.GetIcon(path), Width = 24, Height = 24, Margin = new Thickness(0, 0, 10, 0) };
+                DockPanel.SetDock(icon, System.Windows.Controls.Dock.Left);
+                row.Children.Add(icon);
+
+                var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+                Button Small(string glyph, string tip, Action action)
+                {
+                    var b = new Button
+                    {
+                        Content = glyph,
+                        FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
+                        Width = 30,
+                        Height = 30,
+                        Padding = new Thickness(0),
+                        Margin = new Thickness(4, 0, 0, 0),
+                        ToolTip = tip,
+                        Style = (Style)Application.Current.Resources["RoundButton"],
+                        Tag = new CornerRadius(15),
+                    };
+                    b.Click += (_, _) => action();
+                    return b;
+                }
+                void Move(int delta)
+                {
+                    var j = index + delta;
+                    if (j < 0 || j >= pinned.Count) return;
+                    (pinned[index], pinned[j]) = (pinned[j], pinned[index]);
+                    DockChange(() => { });
+                    Fill();
+                }
+                buttons.Children.Add(Small("\uE70E", "Mover para a esquerda", () => Move(-1)));
+                buttons.Children.Add(Small("\uE70D", "Mover para a direita", () => Move(1)));
+                buttons.Children.Add(Small("\uE711", "Remover do dock", () =>
+                {
+                    pinned.RemoveAt(index);
+                    DockChange(() => { });
+                    Fill();
+                }));
+                DockPanel.SetDock(buttons, System.Windows.Controls.Dock.Right);
+                row.Children.Add(buttons);
+
+                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                text.Children.Add(new TextBlock { Text = Docking.Native.DisplayName(path), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+                var caption = Ui.Caption(path);
+                caption.TextTrimming = TextTrimming.CharacterEllipsis;
+                text.Children.Add(caption);
+                row.Children.Add(text);
+                list.Children.Add(row);
+            }
+            if (pinned.Count == 0) list.Children.Add(Ui.Caption("Nenhum programa fixado."));
+        }
+        Fill();
+
+        var add = Ui.Btn("Adicionar programa…", () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Escolha um programa ou atalho",
+                Filter = "Programas e atalhos (*.exe;*.lnk)|*.exe;*.lnk|Todos os arquivos (*.*)|*.*",
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu),
+                DereferenceLinks = false,
+            };
+            if (dialog.ShowDialog(this) != true) return;
+            (_settings.DockPinned ??= Docking.DockWindow.DefaultPinned()).Add(dialog.FileName);
+            DockChange(() => { });
+            Fill();
+        }, primary: true);
+        var reset = Ui.Btn("Restaurar padrão", () =>
+        {
+            _settings.DockPinned = Docking.DockWindow.DefaultPinned();
+            DockChange(() => { });
+            Fill();
+        });
+
+        return Page("Dock",
+            Ui.Card("Dock estilo Mac", "\uE7C4", enabled,
+                Ui.Caption("Barra embaixo e centralizada com os seus programas. Os ícones crescem quando o mouse passa, " +
+                           "e uma bolinha mostra quais estão abertos. Clique para abrir ou alternar; botão direito para mais opções; " +
+                           "botão do meio abre uma nova janela.")),
+            Ui.Card("Barra do Windows", "\uE737", hideTaskbar,
+                Ui.Caption("Liga o \"ocultar automaticamente\" da barra de tarefas do Windows: ela some e só aparece se você encostar o mouse embaixo. " +
+                           "O botão com 4 quadrados no dock abre o menu Iniciar. Ao desligar (ou fechar o Assistente) a barra volta ao normal.")),
+            Ui.Card("Comportamento", "\uE713", autoHide, running,
+                Ui.Caption("Com o dock sempre visível, as janelas maximizadas param acima dele, como no Mac.")),
+            Ui.Card("Tamanho", "\uE740", size, zoom),
+            Ui.Card("Programas fixados", "\uE718", list, Ui.Inline(add, reset),
+                Ui.Caption("Dica: no próprio dock, clique com o botão direito num programa aberto e escolha \"Manter no dock\".")));
     }
 
     private FrameworkElement ChatPage()

@@ -32,6 +32,8 @@ Widget flutuante para Windows: fica como uma alça fina no topo da tela (central
 
 As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferramentas, Calculadoras, Tempo) e cada grupo tem sub-abas.
 
+**Dock estilo Mac** (Configurações › Dock, ou pelo ícone da bandeja): barra embaixo e centralizada com programas fixados e abertos, zoom nos ícones, bolinha nos abertos, clique para abrir/alternar/minimizar, botão direito para fixar, abrir nova janela ou fechar. Pode esconder a barra de tarefas do Windows (liga o "ocultar automaticamente", desfeito ao desligar ou sair) e se esconder sozinho.
+
 **Mini widgets** (com o painel fechado, ao lado do avatar; dá para desligar em Configurações › Geral):
 - À direita: mini player quando há música tocando (capa, nome, anterior / tocar-pausar / próxima). Some depois de 10 min pausado.
 - À esquerda: timer ou cronômetro rodando, com pausar/continuar e parar. Quando o timer acaba: recomeçar ou silenciar o alarme.

@@ -25,6 +25,16 @@ public sealed class TrayIcon : IDisposable
         menu.Opening += (_, _) => startup.Checked = StartupManager.IsEnabled; // reflete mudanças feitas nas configurações
         menu.Items.Add(startup);
 
+        var dock = new ToolStripMenuItem("Dock estilo Mac") { CheckOnClick = true };
+        dock.Click += (_, _) =>
+        {
+            settings.DockEnabled = dock.Checked;
+            settings.Save();
+            Docking.DockWindow.Apply(settings);
+        };
+        menu.Opening += (_, _) => dock.Checked = settings.DockEnabled;
+        menu.Items.Add(dock);
+
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Verificar atualizações", null,
