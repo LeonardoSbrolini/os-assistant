@@ -108,10 +108,10 @@ public sealed class TimeWidget : MiniWidget
 
         _pause.Visibility = finished ? Visibility.Collapsed : Visibility.Visible;
         _pause.Content = running ? "" : "";
-        _pause.ToolTip = running ? "Pausar" : "Continuar";
+        Tip(_pause, running ? "Pausar" : "Continuar");
         _restart.Visibility = finished ? Visibility.Visible : Visibility.Collapsed;
         _mute.Visibility = finished && Timer.AlarmRinging ? Visibility.Visible : Visibility.Collapsed;
-        _close.ToolTip = finished ? "Fechar" : _showingTimer ? "Parar o timer" : "Zerar o cronômetro";
+        Tip(_close, finished ? "Fechar" : _showingTimer ? "Parar o timer" : "Zerar o cronômetro");
 
         _time.SetResourceReference(TextBlock.ForegroundProperty, finished ? "ErrorBrush" : "TextBrush");
         var pulse = finished && Timer.AlarmRinging || !running && !finished;

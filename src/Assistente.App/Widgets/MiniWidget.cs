@@ -77,6 +77,7 @@ public abstract class MiniWidget : Window
 
         if (show)
         {
+            IsHitTestVisible = true;
             Opacity = 0;
             Show();
             Place();
@@ -87,6 +88,10 @@ public abstract class MiniWidget : Window
         }
         else
         {
+            // Fecha as dicas abertas: se ficarem abertas com a janela escondida, o Windows
+            // as joga no canto da tela.
+            IsHitTestVisible = false;
+            CloseTips(this);
             var fade = Anim.To(0, 150);
             fade.Completed += (_, _) =>
             {
@@ -135,7 +140,7 @@ public abstract class MiniWidget : Window
             Height = size,
             Padding = new Thickness(0),
             Margin = new Thickness(2, 0, 0, 0),
-            ToolTip = tip,
+            ToolTip = new ToolTip { Content = tip },
             Focusable = false,
             Style = (Style)Application.Current.Resources[primary ? "PrimaryButton" : "RoundButton"],
             Tag = new CornerRadius(size / 2),
@@ -143,6 +148,20 @@ public abstract class MiniWidget : Window
         };
         button.Click += (_, _) => onClick();
         return button;
+    }
+
+    /// <summary>Troca o texto da dica (sem criar dicas soltas).</summary>
+    protected static void Tip(FrameworkElement element, string text)
+    {
+        if (element.ToolTip is ToolTip tip) tip.Content = text;
+        else element.ToolTip = new ToolTip { Content = text };
+    }
+
+    private static void CloseTips(DependencyObject root)
+    {
+        if (root is FrameworkElement { ToolTip: ToolTip tip }) tip.IsOpen = false;
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            CloseTips(VisualTreeHelper.GetChild(root, i));
     }
 
     protected static void Pulse(UIElement element, bool on)

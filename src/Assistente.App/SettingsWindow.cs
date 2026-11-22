@@ -479,6 +479,7 @@ public sealed class SettingsWindow : Window
         }
 
         var enabled = Toggle("Mostrar o dock embaixo da tela", _settings.DockEnabled, v => _settings.DockEnabled = v);
+        var hideTaskbar = Toggle("Com o dock ligado, esconder a barra do Windows (só o dock aparece embaixo)", _settings.DockHideTaskbar, v => _settings.DockHideTaskbar = v);
         var tray = Toggle("Wi‑Fi, volume, bateria e relógio no canto direito do dock", _settings.DockShowTray, v => _settings.DockShowTray = v);
         RadioButton Mode(string text, string value)
         {
@@ -586,6 +587,9 @@ public sealed class SettingsWindow : Window
                 Ui.Caption("Barra embaixo e centralizada com os seus programas. Os ícones crescem quando o mouse passa, " +
                            "e uma bolinha mostra quais estão abertos. Clique para abrir ou alternar; botão direito para mais opções; " +
                            "botão do meio abre uma nova janela.")),
+            Ui.Card("Barra do Windows", "\uE737", hideTaskbar,
+                Ui.Caption("A barra volta sozinha se você desligar o dock ou fechar o Assistente. " +
+                           "Botão direito no botão Iniciar do dock › \"Mostrar a barra do Windows\" também traz ela de volta.")),
             Ui.Card("Canto direito", "\uE701", tray,
                 Ui.Caption("Clique no Wi‑Fi/volume/bateria para abrir as configurações rápidas do Windows, e no relógio para ver notificações e calendário.")),
             Ui.Card("Quando esconder o dock", "\uE713", autoHide, running,

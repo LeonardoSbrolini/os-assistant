@@ -54,6 +54,7 @@ public sealed class DockWindow : Window
     private int _barPx;
     private Rect? _barRect;
     private DateTime _lastBarChange;
+    private DateTime _revealedAt = DateTime.MinValue;
 
     private DockWindow(AppSettings settings)
     {
@@ -83,7 +84,13 @@ public sealed class DockWindow : Window
         _items.Margin = new Thickness(0, 0, 0, BottomMargin + ShelfPad);
         _items.MouseMove += (_, e) =>
         {
-            _mouseX = e.GetPosition(_items).X;
+            // Enquanto o dock está subindo, o mouse "passa" pelos ícones sem querer: sem zoom nesse momento.
+            // O zoom só começa quando o mouse sobe para cima dos ícones.
+            var pos = e.GetPosition(_items);
+            if (_hidden || DateTime.Now - _revealedAt < TimeSpan.FromMilliseconds(380) ||
+                (_mouseX is null && pos.Y > _items.ActualHeight - DockItem.DotSpace - 4))
+                return;
+            _mouseX = pos.X;
             UpdateTargets();
         };
         _items.MouseLeave += (_, _) =>
@@ -396,10 +403,12 @@ public sealed class DockWindow : Window
     {
         if (_hidden == !show && animate) return;
         _hidden = !show;
-        if (!show)
+        if (show) _revealedAt = DateTime.Now;
+        else
         {
             _mouseX = null;
             UpdateTargets();
+            CloseTips(this);
         }
         var to = show ? 0 : HiddenOffset;
         if (animate)
@@ -411,6 +420,13 @@ public sealed class DockWindow : Window
             _slide.BeginAnimation(TranslateTransform.YProperty, null);
             _slide.Y = to;
         }
+    }
+
+    private static void CloseTips(DependencyObject root)
+    {
+        if (root is FrameworkElement { ToolTip: ToolTip tip }) tip.IsOpen = false;
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            CloseTips(VisualTreeHelper.GetChild(root, i));
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -641,6 +657,15 @@ public sealed class DockWindow : Window
         if (entry.IsStart)
         {
             menu.Items.Add(Item("Configurações do dock…", () => SettingsWindow.Open("Dock")));
+            if (_settings.DockHideTaskbar)
+            {
+                menu.Items.Add(Item("Mostrar a barra do Windows", () =>
+                {
+                    _settings.DockHideTaskbar = false;
+                    _settings.Save();
+                    Apply(_settings);
+                }));
+            }
             menu.Items.Add(Item("Desligar o dock", () =>
             {
                 _settings.DockEnabled = false;

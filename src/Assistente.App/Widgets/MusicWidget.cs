@@ -38,6 +38,7 @@ public sealed class MusicWidget : MiniWidget
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
     private readonly Button _playPause;
+    private readonly StackPanel _info;
     private ImageSource? _lastCover;
     private string _lastTitle = "";
 
@@ -54,7 +55,8 @@ public sealed class MusicWidget : MiniWidget
         var info = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand, Background = Brushes.Transparent };
         info.Children.Add(_cover);
         info.Children.Add(text);
-        info.ToolTip = "Abrir a aba Música";
+        _info = info;
+        Tip(info, "Abrir a aba Música");
         info.MouseLeftButtonUp += (_, _) => MainWindow.Current?.ShowTool("Tocando agora");
 
         var row = new StackPanel { Orientation = Orientation.Horizontal };
@@ -90,7 +92,7 @@ public sealed class MusicWidget : MiniWidget
         if (!Media.HasSession) return;
         _title.Text = Media.Title;
         _artist.Text = Media.Artist.Length > 0 ? Media.Artist : Media.AppName;
-        ToolTip = $"{Media.Title}\n{Media.Artist}\nTocando em {Media.AppName}";
+        Tip(_info, $"{Media.Title}\n{Media.Artist}\nTocando em {Media.AppName}\n(clique para abrir a aba Música)");
         _playPause.Content = Media.IsPlaying ? "" : "";
         if (!ReferenceEquals(_lastCover, Media.Cover))
         {
