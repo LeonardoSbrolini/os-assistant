@@ -374,7 +374,7 @@ public sealed class SettingsWindow : Window
         var rest = new StackPanel();
         foreach (var (key, title, caption) in new[]
         {
-            ("fechada", "Fechada", "Só a pílula preta; passar o mouse abre um pouco e clicar abre tudo."),
+            ("fechada", "Fechada", "Só a pílula preta, até você passar o mouse."),
             ("peek", "Um pouco aberta", "Na área de trabalho fica mostrando saudação ou música e a hora."),
             ("aberta", "Aberta na página inicial", "Na área de trabalho fica aberta por completo, na aba Início."),
         })
@@ -389,9 +389,27 @@ public sealed class SettingsWindow : Window
             rest.Children.Add(radio);
         }
 
+        var hover = new StackPanel();
+        foreach (var (key, title, caption) in new[]
+        {
+            ("aberta", "Aberta", "Abre por completo, com as abas Início, Bandeja e Sistema."),
+            ("peek", "Um pouco aberta", "Mostra saudação ou música e a hora; clique para abrir tudo."),
+        })
+        {
+            var radio = new RadioButton { GroupName = "islandHover", IsChecked = _settings.IslandHover == key, Margin = new Thickness(0, 4, 0, 4) };
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
+            text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
+            radio.Content = text;
+            var k = key;
+            radio.Checked += (_, _) => { _settings.IslandHover = k; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); };
+            hover.Children.Add(radio);
+        }
+
         return Page("Ilha e menus",
             Ui.Card("Topo da tela", "", island),
-            Ui.Card("Como a ilha fica na área de trabalho", "\uE8A0", rest,
+            Ui.Card("Ao passar o mouse", "\uE8B0", hover),
+            Ui.Card("Parada na área de trabalho", "\uE8A0", rest,
                 Ui.Caption("Com um app aberto ela sempre volta a ficar fechada.")),
             Ui.Card("Cantos da tela", "", corners),
             Ui.Card("Arquivos", "", radial));
@@ -399,8 +417,25 @@ public sealed class SettingsWindow : Window
 
     private FrameworkElement TopBarPage()
     {
-        var enabled = ToggleRow("Mostrar a barra de menus", "Ao lado da ilha, de ponta a ponta no topo (só na área de trabalho ou ao levar o mouse ao topo).",
+        var enabled = ToggleRow("Mostrar a barra de menus", "Ao lado da ilha, de ponta a ponta no topo.",
             _settings.TopBarEnabled, v => { _settings.TopBarEnabled = v; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); }, last: true);
+
+        var when = new StackPanel();
+        foreach (var (key, title, caption) in new[]
+        {
+            ("desktop", "Só na área de trabalho", "Some quando um app está aberto na frente."),
+            ("topo", "Também ao levar o mouse ao topo", "Com um app aberto, aparece quando o mouse encosta no topo da tela."),
+        })
+        {
+            var radio = new RadioButton { GroupName = "topBarShow", IsChecked = _settings.TopBarShow == key, Margin = new Thickness(0, 4, 0, 4) };
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
+            text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
+            radio.Content = text;
+            var k = key;
+            radio.Checked += (_, _) => { _settings.TopBarShow = k; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); };
+            when.Children.Add(radio);
+        }
 
         var styles = new WrapPanel();
         foreach (var (key, name) in new[] { ("escura", "Escura"), ("preta", "Preta (igual à ilha)"), ("transparente", "Transparente") })
@@ -418,6 +453,7 @@ public sealed class SettingsWindow : Window
 
         return Page("Barra de menus",
             Ui.Card("Barra", "\uE700", enabled, styles),
+            Ui.Card("Quando aparece", "\uE7B3", when),
             Ui.Card("Lado esquerdo", "\uE8E4", left,
                 Ui.Caption("Ligue o que quer ver e use as setas para mudar a ordem.")),
             Ui.Card("Lado direito", "\uE8E2", right,

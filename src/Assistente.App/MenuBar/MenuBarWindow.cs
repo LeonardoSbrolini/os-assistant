@@ -229,17 +229,41 @@ public sealed class MenuBarWindow : Window
     {
         var w = Current;
         if (w is null) return;
-        w._topBar.Visibility = w._settings.TopBarEnabled ? Visibility.Visible : Visibility.Collapsed;
+        var want = w._settings.TopBarEnabled && w._onDesktop;
+        w._topBarShown = !want; // força reaplicar
+        w.ShowTopBar(want);
         w._topBar.Rebuild();
         w.ApplyCompactItems();
         w.FitCompact();
         if (!w._bar.IsMouseOver) w._popover.GoRest();
     }
 
+    private bool _topBarShown = true;
+
+    /// <summary>Mostra/esconde a barra de menus com um fade (a ilha continua).</summary>
+    private void ShowTopBar(bool show)
+    {
+        if (show == _topBarShown) return;
+        _topBarShown = show;
+        ApplyCompactItems();
+        FitCompact();
+        if (show)
+        {
+            _topBar.Visibility = Visibility.Visible;
+            _topBar.BeginAnimation(OpacityProperty, Anim.To(1, 200));
+        }
+        else
+        {
+            var fade = Anim.To(0, 150);
+            fade.Completed += (_, _) => { if (!_topBarShown) _topBar.Visibility = Visibility.Collapsed; };
+            _topBar.BeginAnimation(OpacityProperty, fade);
+        }
+    }
+
     /// <summary>Com a barra de menus ligada, relógio/CPU/bateria saem da ilha (já estão na barra).</summary>
     private void ApplyCompactItems()
     {
-        var bar = _settings.TopBarEnabled;
+        var bar = _settings.TopBarEnabled && _topBarShown;
         _cpuItem.Visibility = bar ? Visibility.Collapsed : Visibility.Visible;
         _clockItem.Visibility = bar ? Visibility.Collapsed : Visibility.Visible;
         _batteryItem.Visibility = !bar && _hasBattery ? Visibility.Visible : Visibility.Collapsed;
@@ -377,7 +401,7 @@ public sealed class MenuBarWindow : Window
         var power = Forms.SystemInformation.PowerStatus;
         var hasBattery = power.BatteryChargeStatus != Forms.BatteryChargeStatus.NoSystemBattery && power.BatteryLifePercent <= 1;
         _hasBattery = hasBattery;
-        _batteryItem.Visibility = hasBattery && !_settings.TopBarEnabled ? Visibility.Visible : Visibility.Collapsed;
+        _batteryItem.Visibility = hasBattery && !(_settings.TopBarEnabled && _topBarShown) ? Visibility.Visible : Visibility.Collapsed;
         if (hasBattery)
         {
             _batteryText.Text = $"{power.BatteryLifePercent * 100:0}%";
@@ -441,9 +465,12 @@ public sealed class MenuBarWindow : Window
         // Na área de trabalho fica à vista; com app aberto aparece ao levar o mouse ao topo, no meio.
         var onDesktop = Native.ForegroundAppRect() is null && !Native.IsForegroundFullscreen();
         var bar = _settings.TopBarEnabled;
-        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && (bar || cx >= rect.Left - 80 && cx <= rect.Right + 80) && !Native.IsForegroundFullscreen();
+        // A barra de menus fica só na área de trabalho, a não ser que a opção "ao levar o mouse ao topo" esteja ligada.
+        var barTop = bar && _settings.TopBarShow == "topo";
+        ShowTopBar(bar && (onDesktop || barTop && !_hidden));
+        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && (barTop || cx >= rect.Left - 80 && cx <= rect.Right + 80) && !Native.IsForegroundFullscreen();
         var barRect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, (BarHeight + 4) * dpi.DpiScaleY);
-        var mouseHere = !_hidden && (rect.Contains(cx, cy) || bar && barRect.Contains(cx, cy));
+        var mouseHere = !_hidden && (rect.Contains(cx, cy) || _topBarShown && barRect.Contains(cx, cy));
 
         // Saiu/voltou para a área de trabalho: a ilha volta ao jeito escolhido (fechada, um pouco aberta, aberta).
         if (onDesktop != _onDesktop)
@@ -748,7 +775,8 @@ public sealed class MenuBarWindow : Window
             _open.Tick += (_, _) =>
             {
                 _open.Stop();
-                if (_w._bar.IsMouseOver && State == IslandState.Closed) Peek();
+                if (!_w._bar.IsMouseOver || State == HoverState || State == IslandState.Full) return;
+                if (HoverState == IslandState.Full) { _w._tab = "inicio"; Open(); } else Peek();
             };
             _w._bar.MouseLeave += (_, _) =>
             {
@@ -758,8 +786,8 @@ public sealed class MenuBarWindow : Window
             _w._bar.MouseEnter += (_, _) =>
             {
                 _close.Stop();
-                // Passar o mouse abre um pouco; clicar abre tudo.
-                if (State == IslandState.Closed) _open.Start();
+                // Passar o mouse abre do jeito escolhido (um pouco ou tudo); clicar abre tudo.
+                if (State != IslandState.Full && State != HoverState) _open.Start();
             };
             // Arrastando um arquivo até a ilha: abre direto na Bandeja.
             _w._bar.DragEnter += (_, _) =>
@@ -795,6 +823,9 @@ public sealed class MenuBarWindow : Window
                 "aberta" => IslandState.Full,
                 _ => IslandState.Closed,
             };
+
+        /// <summary>Como a ilha abre ao passar o mouse.</summary>
+        private IslandState HoverState => _w._settings.IslandHover == "peek" ? IslandState.Peek : IslandState.Full;
 
         /// <summary>Volta ao jeito escolhido nas configurações.</summary>
         public void GoRest()

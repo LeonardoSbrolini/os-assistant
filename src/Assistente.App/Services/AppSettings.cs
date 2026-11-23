@@ -128,6 +128,12 @@ public sealed class AppSettings
     /// <summary>Como a ilha fica parada na área de trabalho: "fechada", "peek" (um pouco aberta) ou "aberta".</summary>
     public string IslandRest { get; set; } = "fechada";
 
+    /// <summary>O que a ilha mostra ao passar o mouse: "peek" (um pouco aberta) ou "aberta".</summary>
+    public string IslandHover { get; set; } = "aberta";
+
+    /// <summary>Quando a barra de menus aparece: "desktop" (só na área de trabalho) ou "topo" (também ao levar o mouse ao topo).</summary>
+    public string TopBarShow { get; set; } = "desktop";
+
     /// <summary>Como estavam dicas/Destaque da tela de bloqueio antes de limpar (null = não mexeu).</summary>
     public System.Collections.Generic.Dictionary<string, int>? LockScreenOriginal { get; set; }
     public string LockScreenWallpaper { get; set; } = "noite";
