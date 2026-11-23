@@ -63,6 +63,7 @@ public sealed class MenuBarWindow : Window
 
     private readonly TopBar _topBar;
     private bool _onDesktop;
+    private bool _roomToOpen = true;
     private bool _hasBattery;
 
     private bool _hidden;
@@ -434,6 +435,7 @@ public sealed class MenuBarWindow : Window
             _timerItem.Visibility = Visibility.Collapsed;
         }
         _topBar.Refresh();
+        if (_tab == "tempo") _popover.Refresh();
         FitCompact();
     }
 
@@ -462,13 +464,30 @@ public sealed class MenuBarWindow : Window
             if (!_hidden) Reveal(false);
             return;
         }
-        // Na área de trabalho fica à vista; com app aberto aparece ao levar o mouse ao topo, no meio.
-        var onDesktop = Native.ForegroundAppRect() is null && !Native.IsForegroundFullscreen();
+        // Fica sempre à vista e só sai de cena (com transição) quando uma janela encosta no topo,
+        // onde ficam a barra e a ilha (ex.: janela maximizada) ou em tela cheia — como o dock do Mac.
         var bar = _settings.TopBarEnabled;
+        var fullscreen = Native.IsForegroundFullscreen();
+        var fg = Native.ForegroundAppRect();
+        var stripTop = Top * dpi.DpiScaleY;
+        var stripBottom = stripTop + (BarHeight + 2) * dpi.DpiScaleY;
+        var stripLeft = bar ? Left * dpi.DpiScaleX : rect.Left - 4;
+        var stripRight = bar ? (Left + Width) * dpi.DpiScaleX : rect.Right + 4;
+        var touchesTop = fg is { } r && r.Width > 0 && r.Top < stripBottom && r.Bottom > stripTop && r.Right > stripLeft && r.Left < stripRight;
+        var onDesktop = !fullscreen && !touchesTop;
+        // Espaço para a ilha ficar aberta embaixo do topo sem cobrir a janela da frente.
+        var centerX = (Left + Width / 2) * dpi.DpiScaleX;
+        var openArea = new Rect(centerX - 310 * dpi.DpiScaleX, stripTop, 620 * dpi.DpiScaleX, 300 * dpi.DpiScaleY);
+        var roomToOpen = fg is not { } f || f.Width <= 0 || !openArea.IntersectsWith(f);
+        if (roomToOpen != _roomToOpen)
+        {
+            _roomToOpen = roomToOpen;
+            if (!_hidden && !_bar.IsMouseOver && !_dragging) _popover.GoRest();
+        }
         // A barra de menus fica só na área de trabalho, a não ser que a opção "ao levar o mouse ao topo" esteja ligada.
         var barTop = bar && _settings.TopBarShow == "topo";
         ShowTopBar(bar && (onDesktop || barTop && !_hidden));
-        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && (barTop || cx >= rect.Left - 80 && cx <= rect.Right + 80) && !Native.IsForegroundFullscreen();
+        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && (barTop || cx >= rect.Left - 80 && cx <= rect.Right + 80) && !fullscreen;
         var barRect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, (BarHeight + 4) * dpi.DpiScaleY);
         var mouseHere = !_hidden && (rect.Contains(cx, cy) || _topBarShown && barRect.Contains(cx, cy));
 
@@ -817,7 +836,7 @@ public sealed class MenuBarWindow : Window
 
         /// <summary>Como a ilha deve ficar parada agora (só fica aberta na área de trabalho).</summary>
         private IslandState RestState =>
-            !_w._onDesktop || _w._hidden ? IslandState.Closed : _w._settings.IslandRest switch
+            !_w._onDesktop || !_w._roomToOpen || _w._hidden ? IslandState.Closed : _w._settings.IslandRest switch
             {
                 "peek" => IslandState.Peek,
                 "aberta" => IslandState.Full,
@@ -1043,7 +1062,7 @@ public sealed class MenuBarWindow : Window
         DockPanel.SetDock(right, Dock.Right);
         header.Children.Add(right);
         var tabs = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (key, glyph, text) in new[] { ("inicio", "", "Início"), ("bandeja", "", "Bandeja"), ("sistema", "", "Sistema") })
+        foreach (var (key, glyph, text) in new[] { ("inicio", "", "Início"), ("bandeja", "", "Bandeja"), ("sistema", "", "Sistema"), ("tempo", "\uE916", "Tempo") })
         {
             var selected = _tab == key;
             var icon = Glyph(glyph);
@@ -1077,6 +1096,7 @@ public sealed class MenuBarWindow : Window
         {
             "bandeja" => TrayView(),
             "sistema" => SystemView(),
+            "tempo" => TimeView(),
             _ => HomeView(),
         };
         root.Children.Add(body.View);
@@ -1314,6 +1334,133 @@ public sealed class MenuBarWindow : Window
         }
         _tab = "bandeja";
         if (_popover.IsOpen) _popover.Reflow(); else _popover.Open();
+    }
+
+    private string _timeMode = "timer";
+
+    // Tempo: temporizador (padrão) ou cronômetro.
+    private (UIElement, Action?) TimeView()
+    {
+        var timer = TimerService.Instance;
+        var watch = StopwatchService.Instance;
+        var grid = new Grid { Height = 118 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // Esquerda: escolher o modo e o mostrador grande.
+        var modes = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var (key, text) in new[] { ("timer", "Temporizador"), ("cronometro", "Cronômetro") })
+        {
+            var selected = _timeMode == key;
+            var pill = new Border
+            {
+                Padding = new Thickness(10, 4, 10, 4),
+                Margin = new Thickness(0, 0, 4, 0),
+                CornerRadius = new CornerRadius(8),
+                Cursor = Cursors.Hand,
+                Background = selected ? new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent,
+                Opacity = selected ? 1 : 0.6,
+                Child = Text(text, 12, bold: selected),
+            };
+            var k = key;
+            pill.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                if (_timeMode == k) return;
+                _timeMode = k;
+                _popover.Reflow();
+            };
+            modes.Children.Add(pill);
+        }
+        var big = new TextBlock
+        {
+            FontSize = 38,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+            FontFamily = (FontFamily)Application.Current.Resources["MonoFont"],
+            Margin = new Thickness(2, 8, 0, 0),
+        };
+        var progress = new Border { Height = 4, CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 0, Margin = new Thickness(2, 6, 0, 0) };
+        progress.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+        var left = new StackPanel();
+        left.Children.Add(modes);
+        left.Children.Add(big);
+        left.Children.Add(progress);
+        var leftCard = Card(left);
+        grid.Children.Add(leftCard);
+
+        // Direita: atalhos de tempo e botões.
+        var right = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var play = new Widgets.PillButton("\uE768", () => { }, true, 34);
+        var reset = new Widgets.PillButton("\uE72C", () => { }, false, 34) { ToolTip = "Zerar" };
+        var controls = Row(play, reset);
+        controls.Margin = new Thickness(0, 6, 0, 0);
+        Action update;
+        if (_timeMode == "timer")
+        {
+            var presets = new WrapPanel();
+            foreach (var min in new[] { 1, 3, 5, 10, 15, 25, 30, 60 })
+            {
+                var m = min;
+                var chip = new Border
+                {
+                    Padding = new Thickness(9, 4, 9, 4),
+                    Margin = new Thickness(0, 0, 5, 5),
+                    CornerRadius = new CornerRadius(8),
+                    Cursor = Cursors.Hand,
+                    Background = new SolidColorBrush(Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF)),
+                    Child = Text(m < 60 ? $"{m} min" : "1 h", 12),
+                };
+                chip.MouseEnter += (_, _) => chip.Background = new SolidColorBrush(Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF));
+                chip.MouseLeave += (_, _) => chip.Background = new SolidColorBrush(Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF));
+                chip.MouseLeftButtonUp += (_, e) =>
+                {
+                    e.Handled = true;
+                    timer.Start(TimeSpan.FromMinutes(m), m < 60 ? $"{m} min" : "1 hora");
+                };
+                presets.Children.Add(chip);
+            }
+            right.Children.Add(presets);
+            play.Clicked += () =>
+            {
+                if (timer.State == TimerState.Idle) timer.Start(TimeSpan.FromMinutes(5), "5 min");
+                else if (timer.State == TimerState.Finished) { timer.MuteAlarm(); timer.Reset(); }
+                else timer.TogglePause();
+            };
+            reset.Clicked += () => { timer.MuteAlarm(); timer.Reset(); };
+            update = () =>
+            {
+                big.Text = timer.State == TimerState.Idle ? "05:00"
+                    : timer.State == TimerState.Finished ? "Acabou!" : TimerService.Format(timer.Remaining);
+                play.Glyph = timer.State == TimerState.Running ? "\uE769" : "\uE768";
+                var w = left.ActualWidth > 0 ? left.ActualWidth - 4 : 220;
+                progress.Width = timer.State == TimerState.Idle ? 0 : Math.Max(0, (1 - timer.Progress) * w);
+            };
+        }
+        else
+        {
+            var laps = Muted("");
+            laps.MaxWidth = 300;
+            right.Children.Add(laps);
+            var lap = new Widgets.PillButton("\uE7C1", watch.Lap, false, 34) { ToolTip = "Volta" };
+            controls.Children.Add(lap);
+            play.Clicked += watch.Toggle;
+            reset.Clicked += watch.Reset;
+            update = () =>
+            {
+                big.Text = StopwatchService.Format(watch.Elapsed);
+                play.Glyph = watch.IsRunning ? "\uE769" : "\uE768";
+                laps.Text = watch.Laps.Count == 0 ? "Aperte play para começar; a bandeira marca uma volta."
+                    : string.Join("   ", watch.Laps.TakeLast(3));
+                progress.Width = 0;
+            };
+        }
+        right.Children.Add(controls);
+        var rightCard = Card(right);
+        rightCard.Margin = new Thickness(0);
+        Grid.SetColumn(rightCard, 1);
+        grid.Children.Add(rightCard);
+        return (grid, update);
     }
 
     // Sistema: quatro cartões pequenos lado a lado (CPU, memória, rede, bateria ou disco).

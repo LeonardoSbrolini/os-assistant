@@ -58,8 +58,12 @@ public sealed class PillButton : Border
             _pressed = false;
             Scale(filled ? 1.1 : 1.05);
             onClick();
+            Clicked?.Invoke();
         };
     }
+
+    /// <summary>Clique extra (além da ação do construtor).</summary>
+    public event Action? Clicked;
 
     public string Glyph
     {

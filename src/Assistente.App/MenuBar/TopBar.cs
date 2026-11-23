@@ -421,7 +421,7 @@ internal sealed class TopBar : Grid
                     var mon = now.ToString("MMM", PtBr).TrimEnd('.');
                     text.Text = $"{Cap(dow)} {now.Day} {mon}  {now:HH:mm}";
                 });
-                item.MouseLeftButtonUp += (_, _) => Native.WinCombo(0x4E);
+                item.MouseLeftButtonUp += (_, _) => ShowCalendar(item);
                 return item;
             }
         }
@@ -443,6 +443,114 @@ internal sealed class TopBar : Grid
         {
             return ("", "Rede");
         }
+    }
+
+    // ---------- Calendário ----------
+
+    private Popup? _calendar;
+
+    /// <summary>Calendário do mês que desce da data (estilo Mac), com setas para trocar de mês.</summary>
+    private void ShowCalendar(FrameworkElement anchor)
+    {
+        if (_calendar is { IsOpen: true })
+        {
+            _calendar.IsOpen = false;
+            return;
+        }
+        var month = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        var body = new StackPanel { Width = 262 };
+        var card = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x0E, 0x0E, 0x10)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(14, 12, 14, 12),
+            Margin = new Thickness(12, 4, 12, 16),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.5 },
+            Child = body,
+        };
+        var scale = new ScaleTransform(0.92, 0.92);
+        card.RenderTransformOrigin = new Point(0.5, 0);
+        card.RenderTransform = scale;
+
+        void Render()
+        {
+            body.Children.Clear();
+            var header = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            var arrows = new StackPanel { Orientation = Orientation.Horizontal };
+            arrows.Children.Add(new Widgets.PillButton("\uE76B", () => { month = month.AddMonths(-1); Render(); }, false, 26) { ToolTip = "Mês anterior" });
+            arrows.Children.Add(new Widgets.PillButton("\uE8D1", () => { month = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1); Render(); }, false, 26) { ToolTip = "Hoje" });
+            arrows.Children.Add(new Widgets.PillButton("\uE76C", () => { month = month.AddMonths(1); Render(); }, false, 26) { ToolTip = "Próximo mês" });
+            DockPanel.SetDock(arrows, System.Windows.Controls.Dock.Right);
+            header.Children.Add(arrows);
+            var title = Label(Cap(month.ToString("MMMM", PtBr)) + " " + month.Year, bold: true, size: 15);
+            header.Children.Add(title);
+            body.Children.Add(header);
+
+            var grid = new UniformGrid { Columns = 7 };
+            foreach (var d in new[] { "D", "S", "T", "Q", "Q", "S", "S" })
+            {
+                var t = Label(d, bold: true, size: 10.5);
+                t.Opacity = 0.45;
+                t.HorizontalAlignment = HorizontalAlignment.Center;
+                t.Margin = new Thickness(0, 0, 0, 4);
+                grid.Children.Add(t);
+            }
+            var start = month.AddDays(-(int)month.DayOfWeek);
+            var weeks = ((int)month.DayOfWeek + DateTime.DaysInMonth(month.Year, month.Month) + 6) / 7;
+            for (var i = 0; i < weeks * 7; i++)
+            {
+                var day = start.AddDays(i);
+                var isToday = day == DateTime.Today;
+                var t = Label(day.Day.ToString(), bold: isToday, size: 12.5);
+                t.HorizontalAlignment = HorizontalAlignment.Center;
+                t.Opacity = day.Month == month.Month ? (day.DayOfWeek is DayOfWeek.Sunday or DayOfWeek.Saturday ? 0.6 : 1) : 0.25;
+                var cell = new Border { Width = 30, Height = 30, CornerRadius = new CornerRadius(15), Child = t, Margin = new Thickness(1) };
+                if (isToday)
+                {
+                    cell.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+                    t.Opacity = 1;
+                }
+                grid.Children.Add(cell);
+            }
+            body.Children.Add(grid);
+
+            var footer = new TextBlock
+            {
+                Text = Cap(DateTime.Now.ToString("dddd, d 'de' MMMM", PtBr)),
+                FontSize = 12,
+                Foreground = Brushes.White,
+                Opacity = 0.6,
+                Margin = new Thickness(2, 10, 0, 0),
+            };
+            var open = new TextBlock { Text = "Notificações", FontSize = 12, Cursor = Cursors.Hand, Margin = new Thickness(0, 10, 2, 0) };
+            open.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+            open.MouseLeftButtonUp += (_, _) => { if (_calendar is not null) _calendar.IsOpen = false; Native.WinCombo(0x4E); };
+            var foot = new DockPanel();
+            DockPanel.SetDock(open, System.Windows.Controls.Dock.Right);
+            foot.Children.Add(open);
+            foot.Children.Add(footer);
+            body.Children.Add(foot);
+        }
+
+        Render();
+        _calendar = new Popup
+        {
+            PlacementTarget = anchor,
+            Placement = PlacementMode.Bottom,
+            HorizontalOffset = -150,
+            AllowsTransparency = true,
+            StaysOpen = false,
+            PopupAnimation = PopupAnimation.None,
+            Child = card,
+        };
+        _menusOpen++;
+        _calendar.Closed += (_, _) => _menusOpen = Math.Max(0, _menusOpen - 1);
+        _calendar.IsOpen = true;
+        card.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 160));
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim.To(1, 220, Anim.Back));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.To(1, 220, Anim.Back));
     }
 
     // ---------- Peças ----------

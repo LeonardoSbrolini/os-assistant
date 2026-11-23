@@ -410,7 +410,7 @@ public sealed class SettingsWindow : Window
             Ui.Card("Topo da tela", "", island),
             Ui.Card("Ao passar o mouse", "\uE8B0", hover),
             Ui.Card("Parada na área de trabalho", "\uE8A0", rest,
-                Ui.Caption("Com um app aberto ela sempre volta a ficar fechada.")),
+                Ui.Caption("Se uma janela ficar embaixo dela ou encostar no topo, ela fecha sozinha e volta quando a janela sair.")),
             Ui.Card("Cantos da tela", "", corners),
             Ui.Card("Arquivos", "", radial));
     }
@@ -423,8 +423,8 @@ public sealed class SettingsWindow : Window
         var when = new StackPanel();
         foreach (var (key, title, caption) in new[]
         {
-            ("desktop", "Só na área de trabalho", "Some quando um app está aberto na frente."),
-            ("topo", "Também ao levar o mouse ao topo", "Com um app aberto, aparece quando o mouse encosta no topo da tela."),
+            ("desktop", "Sempre à vista", "Some com uma transição só quando uma janela encosta no topo (maximizada) ou em tela cheia."),
+            ("topo", "Voltar ao levar o mouse ao topo", "Com uma janela maximizada, aparece quando o mouse encosta no topo da tela."),
         })
         {
             var radio = new RadioButton { GroupName = "topBarShow", IsChecked = _settings.TopBarShow == key, Margin = new Thickness(0, 4, 0, 4) };
