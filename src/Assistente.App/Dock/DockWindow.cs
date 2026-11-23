@@ -576,7 +576,7 @@ public sealed class DockWindow : Window
 
         var mouseOnDock = cx >= shelfLeft - 10 && cx <= shelfRight + 10 && cy >= dockTop - IconSize * (Magnify - 1) - 10 && cy <= dockBottom + 2;
         bool wantHide;
-        if (mouseOnDock || _menuOpen) wantHide = false;
+        if (mouseOnDock || _menuOpen || TrayPanel.IsOpen) wantHide = false;
         else if (fullscreen || HideMode == "sempre") wantHide = true;
         else wantHide = Covered();
 
@@ -601,6 +601,11 @@ public sealed class DockWindow : Window
         if (entry.IsStart)
         {
             Native.OpenStartMenu();
+            return;
+        }
+        if (entry.Key == "::tray")
+        {
+            TrayPanel.Toggle(entry.View);
             return;
         }
         if (entry.Action is { } action)

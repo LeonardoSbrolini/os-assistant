@@ -96,24 +96,64 @@ public static class Ui
         return grid;
     }
 
+    /// <summary>Ícone dentro de um quadradinho arredondado com a cor de destaque (estilo macOS).</summary>
+    public static Border IconTile(string glyph, double size = 28, double fontSize = 14)
+    {
+        var icon = new TextBlock
+        {
+            Text = glyph,
+            FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
+            FontSize = fontSize,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        icon.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+        var tile = new Border
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size * 0.3),
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = icon,
+        };
+        tile.SetResourceReference(Border.BackgroundProperty, "AccentSoftBrush");
+        return tile;
+    }
+
+    /// <summary>Item de menu lateral: ícone num quadradinho colorido + nome.</summary>
+    public static StackPanel NavLabel(string glyph, string text)
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        var tile = IconTile(glyph, 28, 14);
+        tile.Margin = new Thickness(0, 0, 10, 0);
+        panel.Children.Add(tile);
+        panel.Children.Add(new TextBlock { Text = text, FontSize = 13.5, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center });
+        return panel;
+    }
+
+    private static readonly Brush CardGradient = Frozen(new LinearGradientBrush(Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x08, 0xFF, 0xFF, 0xFF), 90));
+    private static readonly Brush CardEdge = Frozen(new LinearGradientBrush(Color.FromArgb(0x2C, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x0C, 0xFF, 0xFF, 0xFF), 90));
+
+    private static Brush Frozen(Brush b)
+    {
+        b.Freeze();
+        return b;
+    }
+
     /// <summary>Cartão com título e ícone, usado para agrupar seções.</summary>
     public static Border Card(string title, string? glyph, params UIElement[] children)
     {
-        var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
         if (glyph is not null)
         {
-            var icon = new TextBlock
-            {
-                Text = glyph,
-                FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
-                FontSize = 15,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-            };
-            icon.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
-            header.Children.Add(icon);
+            var tile = IconTile(glyph, 26, 13);
+            tile.CornerRadius = new CornerRadius(13);
+            tile.Margin = new Thickness(0, 0, 10, 0);
+            header.Children.Add(tile);
         }
-        header.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        header.Children.Add(new TextBlock { Text = title, FontSize = 14.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
 
         var body = new StackPanel();
         body.Children.Add(header);
@@ -125,12 +165,12 @@ public static class Ui
 
         return new Border
         {
-            Background = Res("CardBrush"),
-            BorderBrush = Res("CardBorderBrush"),
+            Background = CardGradient,
+            BorderBrush = CardEdge,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14, 12, 14, 8),
-            Margin = new Thickness(0, 0, 0, 12),
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(16, 14, 16, 10),
+            Margin = new Thickness(0, 0, 0, 14),
             Child = body,
         };
     }
@@ -140,9 +180,9 @@ public static class Ui
     public static TextBlock Title(string text) => new()
     {
         Text = text,
-        FontSize = 18,
-        FontWeight = FontWeights.SemiBold,
-        Margin = new Thickness(0, 0, 0, 2),
+        FontSize = 22,
+        FontWeight = FontWeights.Bold,
+        Margin = new Thickness(0, 0, 0, 6),
     };
 
     public static TextBlock Section(string text) => new()

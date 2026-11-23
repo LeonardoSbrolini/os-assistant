@@ -57,10 +57,38 @@ public static class ThemeService
         resources["ThemeBaseColor"] = baseColor;
 
         var panelAlpha = (byte)Math.Round(Math.Clamp(settings.PanelOpacity, 0.6, 1) * 255);
-        resources["PanelBrush"] = Frozen(Color.FromArgb(panelAlpha, baseColor.R, baseColor.G, baseColor.B));
+        resources["PanelBrush"] = Gradient(baseColor, panelAlpha);
 
         var windowAlpha = (byte)Math.Round(Math.Clamp(settings.WindowOpacity, 0.6, 1) * 255);
-        resources["WindowBrush"] = Frozen(Color.FromArgb(windowAlpha, baseColor.R, baseColor.G, baseColor.B));
+        resources["WindowBrush"] = Gradient(baseColor, windowAlpha);
+
+        // Brilho suave da cor de destaque no canto de cima (dá profundidade ao painel).
+        var glow = new RadialGradientBrush
+        {
+            Center = new Point(0.15, 0),
+            GradientOrigin = new Point(0.15, 0),
+            RadiusX = 0.9,
+            RadiusY = 0.7,
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(0x30, accent.R, accent.G, accent.B), 0),
+                new GradientStop(Color.FromArgb(0x10, accent.R, accent.G, accent.B), 0.5),
+                new GradientStop(Color.FromArgb(0, accent.R, accent.G, accent.B), 1),
+            },
+        };
+        glow.Freeze();
+        resources["PanelGlowBrush"] = glow;
+    }
+
+    /// <summary>Fundo em degradê: um pouco mais claro em cima, mais escuro embaixo.</summary>
+    private static Brush Gradient(Color c, byte alpha)
+    {
+        static byte Shift(byte v, int d) => (byte)Math.Clamp(v + d, 0, 255);
+        var brush = new LinearGradientBrush(
+            Color.FromArgb(alpha, Shift(c.R, 10), Shift(c.G, 10), Shift(c.B, 12)),
+            Color.FromArgb(alpha, Shift(c.R, -8), Shift(c.G, -8), Shift(c.B, -6)), 90);
+        brush.Freeze();
+        return brush;
     }
 
     private static SolidColorBrush Frozen(Color color)

@@ -539,17 +539,7 @@ public partial class MainWindow : Window
 
     private StackPanel GroupLabel(ToolGroup group)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        panel.Children.Add(new TextBlock
-        {
-            Text = group.Glyph,
-            FontFamily = (FontFamily)FindResource("IconFont"),
-            FontSize = 16,
-            Width = 28,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        panel.Children.Add(new TextBlock { Text = group.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
-        return panel;
+        return Ui.NavLabel(group.Glyph, group.Name);
     }
 
     private void SelectGroup(ToolGroup? group, string? toolName = null)

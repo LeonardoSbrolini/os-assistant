@@ -78,16 +78,7 @@ public sealed class SettingsWindow : Window
         };
         foreach (var name in _pages.Keys)
         {
-            var label = new StackPanel { Orientation = Orientation.Horizontal };
-            label.Children.Add(new TextBlock
-            {
-                Text = glyphs[name],
-                FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
-                FontSize = 15,
-                Width = 28,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            label.Children.Add(new TextBlock { Text = name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
+            var label = Ui.NavLabel(glyphs[name], name);
             _nav.Items.Add(new ListBoxItem { Tag = name, Content = label });
         }
         _nav.SelectionChanged += (_, _) =>
@@ -160,11 +151,16 @@ public sealed class SettingsWindow : Window
         _host.Margin = new Thickness(20, 4, 16, 16);
         body.Children.Add(_host);
 
+        var glow = new Border { CornerRadius = new CornerRadius(14), IsHitTestVisible = false };
+        glow.SetResourceReference(Border.BackgroundProperty, "PanelGlowBrush");
+        var layers = new Grid();
+        layers.Children.Add(glow);
+        layers.Children.Add(body);
         var root = new Border
         {
             CornerRadius = new CornerRadius(14),
             BorderThickness = new Thickness(1),
-            Child = body,
+            Child = layers,
             Margin = new Thickness(10), // espaço para a sombra
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 2, Opacity = 0.45 },
         };
@@ -215,10 +211,15 @@ public sealed class SettingsWindow : Window
         time.FontSize = 14;
         time.Click += (_, _) => { _settings.TimeWidget = time.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
 
+        var menuBar = Ui.Check("Barra fina no topo com informações (CPU, memória, bateria, relógio) quando não houver janela aberta", _settings.MenuBarEnabled);
+        menuBar.FontSize = 14;
+        menuBar.Margin = new Thickness(0, 0, 0, 10);
+        menuBar.Click += (_, _) => { _settings.MenuBarEnabled = menuBar.IsChecked == true; _settings.Save(); MenuBar.MenuBarWindow.Apply(_settings); };
+
         return Page("Geral",
             Ui.Card("Inicialização", "", startup,
                 Ui.Caption("Quando ligado, o Assistente abre sozinho assim que você entra no Windows.")),
-            Ui.Card("Avatar e mini widgets", "\uE8A9", avatarHide, music, time,
+            Ui.Card("Avatar e mini widgets", "\uE8A9", menuBar, avatarHide, music, time,
                 Ui.Caption("Aparecem ao lado do avatar com o painel fechado, para controlar a música e o timer sem abrir o Assistente.")),
             Ui.Card("Comportamento", "", delay));
     }

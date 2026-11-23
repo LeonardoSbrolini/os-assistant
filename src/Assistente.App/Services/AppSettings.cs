@@ -98,6 +98,7 @@ public sealed class AppSettings
 
     /// <summary>Mostrar o mini widget de timer/cronômetro ao lado do avatar.</summary>
     public bool TimeWidget { get; set; } = true;
+    public bool MenuBarEnabled { get; set; } = true;
 
     // ---------- Dock estilo Mac ----------
 

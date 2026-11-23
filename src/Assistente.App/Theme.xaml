@@ -3,7 +3,8 @@
 
     <!-- Paleta (tema escuro) -->
     <SolidColorBrush x:Key="PanelBrush" Color="#F21C1D22" />
-    <SolidColorBrush x:Key="SidebarBrush" Color="#16FFFFFF" />
+    <SolidColorBrush x:Key="SidebarBrush" Color="#0DFFFFFF" />
+    <SolidColorBrush x:Key="PanelGlowBrush" Color="Transparent" />
     <SolidColorBrush x:Key="InputBrush" Color="#2A2C33" />
     <SolidColorBrush x:Key="HoverBrush" Color="#22FFFFFF" />
     <SolidColorBrush x:Key="BorderBrush" Color="#3A3D46" />
@@ -494,16 +495,16 @@
     </Style>
 
     <Style TargetType="ListBoxItem">
-        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="Padding" Value="10,6" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
-                    <Grid Margin="6,1">
-                        <Border x:Name="Hover" CornerRadius="6" Background="#22FFFFFF" Opacity="0" />
-                        <Border x:Name="Sel" CornerRadius="6" Background="{DynamicResource AccentSoftBrush}" Opacity="0" />
-                        <Border x:Name="Bar" Width="3" CornerRadius="2" Margin="0,8" HorizontalAlignment="Left"
+                    <Grid Margin="8,2">
+                        <Border x:Name="Hover" CornerRadius="10" Background="#18FFFFFF" Opacity="0" />
+                        <Border x:Name="Sel" CornerRadius="10" Background="{DynamicResource AccentSoftBrush}" BorderBrush="#22FFFFFF" BorderThickness="1" Opacity="0" />
+                        <Border x:Name="Bar" Width="3" CornerRadius="2" Margin="-6,10,0,10" HorizontalAlignment="Left"
                                 Background="{DynamicResource AccentBrush}" RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
                                 <ScaleTransform x:Name="BarScale" ScaleY="0" />

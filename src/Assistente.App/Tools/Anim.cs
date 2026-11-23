@@ -36,6 +36,8 @@ public static class Anim
         return a;
     }
 
+    public static ColorAnimation ColorTo(Color to, double ms) => new(to, D(ms)) { EasingFunction = EaseOut };
+
     /// <summary>Elemento aparece subindo um pouco, com fade.</summary>
     public static void FadeUp(UIElement element, double delayMs = 0, double offset = 12)
     {

@@ -36,6 +36,10 @@ As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferr
 
 **Dock estilo Mac** (Configurações › Dock, ou pelo ícone da bandeja): barra embaixo e centralizada com programas fixados e abertos, zoom nos ícones, bolinha nos abertos, clique para abrir/alternar/minimizar, botão direito para fixar, abrir nova janela ou fechar. Como no Mac, some quando uma janela encosta nele e volta ao levar o mouse até a borda de baixo; o canto direito tem Wi‑Fi, volume, bateria e relógio. O avatar do topo também sai de cena quando há uma janela embaixo dele (menos com widget de música/timer) e volta ao levar o mouse ao topo. O painel abre e fecha com um efeito "gênio" saindo do avatar.
 
+**Barra de menus no topo** (Configurações › Geral): quando não há janela por cima, uma barra fina no topo da tela mostra timer, música, rede, CPU (com gráfico), memória, bateria e relógio. Passar o mouse num item abre um popup com detalhes (gráfico da CPU, calendário do mês, controles da música etc.). Com uma janela aberta ela some e volta ao levar o mouse até o topo.
+
+**Apps em segundo plano**: a setinha "^" do dock abre um painel próprio com os apps rodando sem janela (Discord, Steam, OneDrive…). Clique abre o app; ao passar o mouse aparecem os botões de abrir a pasta e fechar o app (clique duas vezes para confirmar).
+
 **Mini widgets** (com o painel fechado, ao lado do avatar; dá para desligar em Configurações › Geral):
 - À direita: mini player quando há música tocando (capa, nome, anterior / tocar-pausar / próxima). Some depois de 10 min pausado.
 - À esquerda: timer ou cronômetro rodando, com pausar/continuar e parar. Quando o timer acaba: recomeçar ou silenciar o alarme.

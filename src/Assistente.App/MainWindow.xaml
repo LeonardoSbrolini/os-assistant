@@ -47,6 +47,8 @@
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1,1,0,1"
                 CornerRadius="12,0,0,12">
+            <Grid>
+            <Border Background="{DynamicResource PanelGlowBrush}" CornerRadius="{Binding CornerRadius, ElementName=ExpandedPanel}" IsHitTestVisible="False" />
             <DockPanel>
                 <!-- Barra lateral: ferramentas + ações no rodapé (sem cabeçalho) -->
                 <Border DockPanel.Dock="Left" Width="180" Background="{StaticResource SidebarBrush}"
@@ -71,6 +73,7 @@
 
                 <ContentControl x:Name="ToolHost" Margin="18,14,14,12" Focusable="False" ClipToBounds="True" />
             </DockPanel>
+            </Grid>
         </Border>
     </Grid>
 </Window>
