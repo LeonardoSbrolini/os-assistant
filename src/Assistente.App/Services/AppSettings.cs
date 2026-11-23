@@ -106,6 +106,9 @@ public sealed class AppSettings
     /// <summary>Apps e pastas do menu da esquerda (null = pastas padrão do usuário).</summary>
     public System.Collections.Generic.List<string>? CornerLeftItems { get; set; }
 
+    /// <summary>Acessos remotos cadastrados (menu da borda esquerda › Acesso remoto).</summary>
+    public System.Collections.Generic.List<RemoteConnection>? RemoteConnections { get; set; }
+
     // ---------- Dock estilo Mac ----------
 
     public bool DockEnabled { get; set; }
