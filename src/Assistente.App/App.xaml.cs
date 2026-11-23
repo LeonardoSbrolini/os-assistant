@@ -40,6 +40,7 @@ public partial class App : Application
         Docking.DockWindow.Apply(settings); // também devolve a barra do Windows se a v0.9.0 escondeu
         MenuBar.MenuBarWindow.Apply(settings);
         Corners.CornerMenu.Apply(settings);
+        Radial.RadialHook.Apply(settings.RadialMenu);
 
         if (settings.ApplyMacTaskbarOnStart)
         {

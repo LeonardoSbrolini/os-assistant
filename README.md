@@ -40,6 +40,8 @@ As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferr
 
 **Menus nas bordas da área de trabalho** (Configurações › Geral): com a área de trabalho à vista, encostar o mouse na borda esquerda abre seus apps e pastas (adicione com "Adicionar app/pasta", remova com o botão direito); a aba **Acesso remoto** guarda conexões (Área de Trabalho Remota do Windows, TightVNC ou outro app, com usuário e senha protegida por DPAPI) e conecta com um clique; no **canto de baixo à direita** abre a central do Windows: relógio e data, Wi‑Fi, Bluetooth, notificações, bateria, volume, apps em segundo plano e atalhos (impressoras, painel de controle, gerenciador de tarefas, lixeira…). Essas funções saíram do dock.
 
+**Menu em círculo** (Configurações › Geral): segure (arrastando) um arquivo ou app no Explorer ou na área de trabalho e clique com o botão direito: aparece um círculo em volta do cursor. Solte o arquivo numa fatia para **zipar**, **extrair** (.zip), **converter para PNG/JPG**, **reduzir 50%**, **copiar o caminho** ou **guardar na bandeja da ilha**. Soltar no centro cancela.
+
 **Apps em segundo plano**: a setinha "^" do dock abre um painel próprio com os apps rodando sem janela (Discord, Steam, OneDrive…). Clique abre o app; ao passar o mouse aparecem os botões de abrir a pasta e fechar o app (clique duas vezes para confirmar).
 
 **Mini widgets** (com o painel fechado, ao lado do avatar; dá para desligar em Configurações › Geral):

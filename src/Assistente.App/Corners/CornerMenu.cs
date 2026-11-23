@@ -36,6 +36,7 @@ public sealed class CornerMenu : Window
     private readonly bool _isLeft;
     private readonly Border _card;
     private readonly Grid _root = new();
+    private readonly ScaleTransform _unfold = new(1, 1);
     private const double EarSize = 16;
     private readonly WrapPanel _tiles = new();
     private readonly ContentControl _body = new() { Focusable = false };
@@ -136,7 +137,8 @@ public sealed class CornerMenu : Window
             Background = Ears.Black,
             Child = content,
         };
-        _root.RenderTransform = _slide;
+        _root.RenderTransformOrigin = isLeft ? new Point(0, 0.5) : new Point(1, 1);
+        _root.RenderTransform = _unfold;
         if (isLeft)
         {
             _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -254,21 +256,18 @@ public sealed class CornerMenu : Window
             // Grudado na borda esquerda, no meio da tela.
             Left = 0;
             Top = Math.Max(area.Top, area.Top + (area.Height - ActualHeight) / 2);
-            _slide.BeginAnimation(TranslateTransform.YProperty, null);
-            _slide.Y = 0;
-            _slide.BeginAnimation(TranslateTransform.XProperty, Anim.FromTo(-ActualWidth, 0, 280, ease));
+
         }
         else
         {
             // Grudado no canto de baixo à direita da tela (por cima da barra do Windows).
             Left = SystemParameters.PrimaryScreenWidth - ActualWidth;
             Top = Math.Max(0, SystemParameters.PrimaryScreenHeight - ActualHeight);
-            _slide.BeginAnimation(TranslateTransform.XProperty, null);
-            _slide.X = 0;
-            _slide.BeginAnimation(TranslateTransform.YProperty, Anim.FromTo(ActualHeight, 0, 300, ease));
+
             Native.BringToTop(new WindowInteropHelper(this).Handle);
         }
-        _root.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 160));
+        // Mesma animação do assistente: desdobra a partir da borda, sem quique.
+        Anim.Unfold(_root, _unfold, true, _isLeft ? 0.2 : 0.5, _isLeft ? 0.6 : 0.3);
     }
 
     private void Hide(bool animate)
@@ -282,12 +281,7 @@ public sealed class CornerMenu : Window
             base.Hide();
             return;
         }
-        var to = _isLeft ? -ActualWidth : ActualHeight;
-        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn };
-        var slide = Anim.To(to, 200, ease);
-        slide.Completed += (_, _) => { if (!_open) base.Hide(); };
-        _slide.BeginAnimation(_isLeft ? TranslateTransform.XProperty : TranslateTransform.YProperty, slide);
-        _root.BeginAnimation(OpacityProperty, Anim.To(0, 200));
+        Anim.Unfold(_root, _unfold, false, _isLeft ? 0.2 : 0.5, _isLeft ? 0.6 : 0.3, () => { if (!_open) base.Hide(); });
     }
 
     // ---------- Conteúdo ----------

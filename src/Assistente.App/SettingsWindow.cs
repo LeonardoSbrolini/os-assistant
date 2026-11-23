@@ -221,10 +221,15 @@ public sealed class SettingsWindow : Window
         corners.Margin = new Thickness(0, 0, 0, 10);
         corners.Click += (_, _) => { _settings.CornerMenus = corners.IsChecked == true; _settings.Save(); Corners.CornerMenu.Apply(_settings); };
 
+        var radial = Ui.Check("Menu em círculo: segure um arquivo no Explorer/área de trabalho e clique com o botão direito (zipar, extrair, converter imagem…)", _settings.RadialMenu);
+        radial.FontSize = 14;
+        radial.Margin = new Thickness(0, 0, 0, 10);
+        radial.Click += (_, _) => { _settings.RadialMenu = radial.IsChecked == true; _settings.Save(); Radial.RadialHook.Apply(_settings.RadialMenu); };
+
         return Page("Geral",
             Ui.Card("Inicialização", "", startup,
                 Ui.Caption("Quando ligado, o Assistente abre sozinho assim que você entra no Windows.")),
-            Ui.Card("Avatar e mini widgets", "\uE8A9", menuBar, corners, avatarHide, music, time,
+            Ui.Card("Avatar e mini widgets", "\uE8A9", menuBar, corners, radial, avatarHide, music, time,
                 Ui.Caption("Aparecem ao lado do avatar com o painel fechado, para controlar a música e o timer sem abrir o Assistente.")),
             Ui.Card("Comportamento", "", delay));
     }

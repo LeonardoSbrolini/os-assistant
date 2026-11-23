@@ -38,6 +38,24 @@ public static class Anim
 
     public static ColorAnimation ColorTo(Color to, double ms) => new(to, D(ms)) { EasingFunction = EaseOut };
 
+    /// <summary>
+    /// Mesma animação do painel do assistente: o elemento "desdobra" a partir de uma borda
+    /// (escala + fade, suave e sem quique). <paramref name="alongX"/>/<paramref name="alongY"/>
+    /// são as escalas iniciais.
+    /// </summary>
+    public static void Unfold(UIElement element, ScaleTransform scale, bool show, double alongX, double alongY, Action? done = null)
+    {
+        var ease = new CubicEase { EasingMode = show ? EasingMode.EaseOut : EasingMode.EaseIn };
+        var ms = show ? 320 : 220;
+        var sx = show ? FromTo(alongX, 1, ms, ease) : To(alongX, ms, ease);
+        var sy = show ? FromTo(alongY, 1, ms, ease) : To(alongY, ms, ease);
+        var fade = show ? FromTo(0, 1, 160, ease) : To(0, 200, ease);
+        if (done is not null) sy.Completed += (_, _) => done();
+        element.BeginAnimation(UIElement.OpacityProperty, fade);
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, sx);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, sy);
+    }
+
     /// <summary>Elemento aparece subindo um pouco, com fade.</summary>
     public static void FadeUp(UIElement element, double delayMs = 0, double offset = 12)
     {

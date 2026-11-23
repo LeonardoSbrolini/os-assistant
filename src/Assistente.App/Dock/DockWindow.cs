@@ -28,6 +28,8 @@ public sealed class DockWindow : Window
     private const double ShelfPad = 6;
     private const double BottomMargin = 0;
     private const double EarSize = 14;
+    private readonly ScaleTransform _unfold = new(1, 1);
+    private int _revealToken;
     private readonly System.Windows.Shapes.Path _earLeft = Ears.Make(Ears.Kind.BottomLeft, EarSize, Ears.Black);
     private readonly System.Windows.Shapes.Path _earRight = Ears.Make(Ears.Kind.BottomRight, EarSize, Ears.Black);
     private const uint AppBarCallback = 0x0400 + 0x1D0; // WM_USER + n
@@ -114,7 +116,8 @@ public sealed class DockWindow : Window
             Layout();
             UpdateTargets();
         };
-        _content.RenderTransform = _slide;
+        _content.RenderTransformOrigin = new Point(0.5, 1);
+        _content.RenderTransform = new TransformGroup { Children = { _unfold, _slide } };
         _content.Children.Add(_earLeft);
         _content.Children.Add(_earRight);
         _content.Children.Add(_shelf);
@@ -423,14 +426,26 @@ public sealed class DockWindow : Window
             CloseTips(this);
         }
         var to = show ? 0 : HiddenOffset;
+        var token = ++_revealToken;
+        _slide.BeginAnimation(TranslateTransform.YProperty, null);
         if (animate)
         {
-            _slide.BeginAnimation(TranslateTransform.YProperty, Anim.To(to, show ? 260 : 300, show ? Anim.Back : Anim.EaseIn));
+            // Mesma animação do assistente: desdobra da borda de baixo, sem quique.
+            if (show) _slide.Y = 0;
+            Anim.Unfold(_content, _unfold, show, 0.6, 0.2, () =>
+            {
+                if (token != _revealToken) return;
+                if (!show) _slide.Y = HiddenOffset;
+            });
         }
         else
         {
-            _slide.BeginAnimation(TranslateTransform.YProperty, null);
             _slide.Y = to;
+            _unfold.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+            _unfold.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            _content.BeginAnimation(OpacityProperty, null);
+            _unfold.ScaleX = _unfold.ScaleY = 1;
+            _content.Opacity = 1;
         }
     }
 

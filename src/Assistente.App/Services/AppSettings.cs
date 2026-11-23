@@ -103,6 +103,9 @@ public sealed class AppSettings
     /// <summary>Menus ao encostar o mouse nas bordas esquerda/direita da área de trabalho.</summary>
     public bool CornerMenus { get; set; } = true;
 
+    /// <summary>Menu em círculo ao segurar um arquivo e clicar com o botão direito.</summary>
+    public bool RadialMenu { get; set; } = true;
+
     /// <summary>Apps e pastas do menu da esquerda (null = pastas padrão do usuário).</summary>
     public System.Collections.Generic.List<string>? CornerLeftItems { get; set; }
 
