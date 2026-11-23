@@ -109,6 +109,9 @@ public sealed class AppSettings
     /// <summary>Acessos remotos cadastrados (menu da borda esquerda › Acesso remoto).</summary>
     public System.Collections.Generic.List<RemoteConnection>? RemoteConnections { get; set; }
 
+    /// <summary>Arquivos guardados na Bandeja da ilha do topo.</summary>
+    public System.Collections.Generic.List<string>? IslandTray { get; set; }
+
     // ---------- Dock estilo Mac ----------
 
     public bool DockEnabled { get; set; }

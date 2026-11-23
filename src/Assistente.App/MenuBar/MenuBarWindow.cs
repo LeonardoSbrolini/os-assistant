@@ -86,15 +86,16 @@ public sealed class MenuBarWindow : Window
         _bar.Width = 200;
         _bar.HorizontalAlignment = HorizontalAlignment.Center;
         _bar.VerticalAlignment = VerticalAlignment.Top;
-        _bar.Margin = new Thickness(0, 6, 0, 0);
-        _bar.Background = new SolidColorBrush(Color.FromArgb(0xFA, 0x00, 0x00, 0x00));
-        _bar.BorderBrush = new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
-        _bar.BorderThickness = new Thickness(1);
-        _bar.CornerRadius = new CornerRadius(BarHeight / 2);
-        _bar.Padding = new Thickness(8, 0, 8, 0);
+        // Grudada no topo como o notch: cantos de cima retos e "orelhas" curvas que se
+        // encontram com a borda da tela; só os cantos de baixo são arredondados.
+        _bar.Margin = new Thickness(0);
+        _bar.Background = IslandBlack;
+        _bar.BorderThickness = new Thickness(0);
+        _bar.CornerRadius = CompactCorners;
+        _bar.Padding = new Thickness(10, 0, 10, 0);
         _bar.ClipToBounds = true;
-        _bar.RenderTransform = _slide;
-        _bar.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 3, Opacity = 0.35 };
+        _bar.AllowDrop = true;
+        _bar.Drop += OnIslandDrop;
 
         _compact.Height = BarHeight - 2;
         _compact.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -106,7 +107,29 @@ public sealed class MenuBarWindow : Window
         _island.Children.Add(_compact);
         _island.Children.Add(_detail);
         _bar.Child = _island;
-        Content = _bar;
+
+        var shell = new Grid { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, RenderTransform = _slide };
+        shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Ear) });
+        shell.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Ear) });
+        var leftEar = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse($"M0,0 L{Ear},0 L{Ear},{Ear} A{Ear},{Ear} 0 0 0 0,0 Z"),
+            Fill = IslandBlack,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        var rightEar = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse($"M{Ear},0 L0,0 L0,{Ear} A{Ear},{Ear} 0 0 1 {Ear},0 Z"),
+            Fill = IslandBlack,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        Grid.SetColumn(_bar, 1);
+        Grid.SetColumn(rightEar, 2);
+        shell.Children.Add(leftEar);
+        shell.Children.Add(_bar);
+        shell.Children.Add(rightEar);
+        Content = shell;
 
         BuildLeft();
 
@@ -193,14 +216,24 @@ public sealed class MenuBarWindow : Window
         if (_hwnd == IntPtr.Zero) _hwnd = new WindowInteropHelper(this).EnsureHandle();
         ReleaseSpace(); // versões antigas reservavam a faixa do topo
         var area = SystemParameters.WorkArea;
-        Width = IslandMaxWidth + 40;
+        Width = IslandMaxWidth + 2 * Ear + 20;
         Height = IslandMaxHeight + 40;
         Left = area.Left + (area.Width - Width) / 2;
         Top = area.Top;
     }
 
-    private const double IslandMaxWidth = 560;
+    private const double IslandMaxWidth = 680;
     private const double IslandMaxHeight = 520;
+    private const double Ear = 12;
+    private static readonly Brush IslandBlack = Frozen(new SolidColorBrush(Color.FromRgb(0, 0, 0)));
+    private static readonly CornerRadius CompactCorners = new(0, 0, 16, 16);
+    private static readonly CornerRadius ExpandedCorners = new(0, 0, 30, 30);
+
+    private static Brush Frozen(Brush b)
+    {
+        b.Freeze();
+        return b;
+    }
 
     private void ReleaseSpace()
     {
@@ -333,7 +366,7 @@ public sealed class MenuBarWindow : Window
     {
         var dpi = VisualTreeHelper.GetDpi(this);
         var islandLeft = Left + (Width - _bar.ActualWidth) / 2;
-        var rect = new Rect(islandLeft * dpi.DpiScaleX, Top * dpi.DpiScaleY, _bar.ActualWidth * dpi.DpiScaleX, (_bar.ActualHeight + 8) * dpi.DpiScaleY);
+        var rect = new Rect(islandLeft * dpi.DpiScaleX, Top * dpi.DpiScaleY, _bar.ActualWidth * dpi.DpiScaleX, (_bar.ActualHeight + 4) * dpi.DpiScaleY);
         var (cx, cy) = Native.CursorPosition();
         // Com o painel do assistente aberto a ilha sai de cena (o painel "sai" dela).
         if (MainWindow.Current?.IsExpanded == true)
@@ -364,7 +397,7 @@ public sealed class MenuBarWindow : Window
         _hidden = !show;
         if (!show) _popover.Close();
         var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = show ? System.Windows.Media.Animation.EasingMode.EaseOut : System.Windows.Media.Animation.EasingMode.EaseIn };
-        _slide.BeginAnimation(TranslateTransform.YProperty, Anim.To(show ? 0 : -(_bar.ActualHeight + 14), show ? 260 : 180, ease));
+        _slide.BeginAnimation(TranslateTransform.YProperty, Anim.To(show ? 0 : -(_bar.ActualHeight + 4), show ? 260 : 180, ease));
         if (show) BringAvatarToFront();
     }
 
@@ -621,8 +654,8 @@ public sealed class MenuBarWindow : Window
     private sealed class IslandPopover
     {
         private readonly MenuBarWindow _w;
-        private readonly DispatcherTimer _close = new() { Interval = TimeSpan.FromMilliseconds(280) };
-        private FrameworkElement? _owner;
+        private readonly DispatcherTimer _close = new() { Interval = TimeSpan.FromMilliseconds(300) };
+        private readonly DispatcherTimer _open = new() { Interval = TimeSpan.FromMilliseconds(140) };
         private Action? _update;
         private int _token;
 
@@ -632,39 +665,69 @@ public sealed class MenuBarWindow : Window
             _close.Tick += (_, _) =>
             {
                 _close.Stop();
-                if (_w._bar.IsMouseOver) return;
+                if (_w._bar.IsMouseOver || _w._dragging) return;
                 Close();
             };
-            _w._bar.MouseLeave += (_, _) => { if (IsOpen) _close.Start(); };
-            _w._bar.MouseEnter += (_, _) => _close.Stop();
+            _open.Tick += (_, _) =>
+            {
+                _open.Stop();
+                if (_w._bar.IsMouseOver) Open();
+            };
+            _w._bar.MouseLeave += (_, _) =>
+            {
+                _open.Stop();
+                if (IsOpen) _close.Start();
+            };
+            _w._bar.MouseEnter += (_, _) =>
+            {
+                _close.Stop();
+                if (!IsOpen) _open.Start();
+            };
+            // Arrastando um arquivo até a ilha: abre direto na Bandeja.
+            _w._bar.DragEnter += (_, _) =>
+            {
+                _w._dragging = true;
+                _close.Stop();
+                if (!IsOpen || _w._tab != "bandeja")
+                {
+                    _w._tab = "bandeja";
+                    if (IsOpen) Reflow(); else Open();
+                }
+            };
+            _w._bar.DragLeave += (_, _) =>
+            {
+                _w._dragging = false;
+                _close.Start();
+            };
         }
 
         public bool IsOpen { get; private set; }
 
-        public void Attach(FrameworkElement owner, Func<(UIElement View, Action? Update)> build)
-        {
-            owner.MouseEnter += (_, _) => Open(owner, build);
-        }
-
-        public void Open(FrameworkElement owner, Func<(UIElement View, Action? Update)> build)
+        public void Open()
         {
             _close.Stop();
-            if (IsOpen && ReferenceEquals(_owner, owner)) return;
-            _owner = owner;
-            var (view, update) = build();
+            IsOpen = true;
+            _w._compact.Visibility = Visibility.Collapsed;
+            Reflow();
+            _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 220, null, 100));
+        }
+
+        /// <summary>Remonta o conteúdo (ex.: trocou de aba) e ajusta o tamanho da ilha.</summary>
+        public void Reflow()
+        {
+            if (!IsOpen) return;
+            var (view, update) = _w.Dashboard();
             _update = update;
             _w._detail.Content = view;
             _w._detail.Visibility = Visibility.Visible;
             update?.Invoke();
-            IsOpen = true;
 
-            _w._island.Measure(new Size(IslandMaxWidth - 20, double.PositiveInfinity));
+            _w._island.Measure(new Size(IslandMaxWidth - 24, double.PositiveInfinity));
             var size = _w._island.DesiredSize;
-            var width = Math.Min(IslandMaxWidth, Math.Max(_w.CompactWidth(), size.Width + 20));
-            var height = Math.Min(IslandMaxHeight, size.Height + 2);
-            _w._bar.CornerRadius = new CornerRadius(26);
+            var width = Math.Min(IslandMaxWidth, Math.Max(560, size.Width + 24));
+            var height = Math.Min(IslandMaxHeight, size.Height + 4);
+            _w._bar.CornerRadius = ExpandedCorners;
             _w.ResizeIsland(width, height, expand: true);
-            _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 200, null, 90));
         }
 
         public void Refresh()
@@ -675,9 +738,9 @@ public sealed class MenuBarWindow : Window
         public void Close()
         {
             _close.Stop();
+            _open.Stop();
             if (!IsOpen) return;
             IsOpen = false;
-            _owner = null;
             _update = null;
             var token = ++_token;
             var fade = Anim.To(0, 90);
@@ -686,7 +749,9 @@ public sealed class MenuBarWindow : Window
                 if (token != _token || IsOpen) return;
                 _w._detail.Visibility = Visibility.Collapsed;
                 _w._detail.Content = null;
-                _w._bar.CornerRadius = new CornerRadius(BarHeight / 2);
+                _w._compact.Visibility = Visibility.Visible;
+                _w._compact.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 200, null, 120));
+                _w._bar.CornerRadius = CompactCorners;
                 _w.ResizeIsland(_w.CompactWidth(), BarHeight, expand: false);
             };
             _w._detail.BeginAnimation(UIElement.OpacityProperty, fade);
@@ -698,7 +763,7 @@ public sealed class MenuBarWindow : Window
     {
         _left.Measure(new Size(double.PositiveInfinity, BarHeight));
         _right.Measure(new Size(double.PositiveInfinity, BarHeight));
-        return Math.Max(180, _left.DesiredSize.Width + _right.DesiredSize.Width + 24 + 18);
+        return Math.Max(200, _left.DesiredSize.Width + _right.DesiredSize.Width + 24 + 20);
     }
 
     private void ResizeIsland(double width, double height, bool expand)
@@ -725,6 +790,324 @@ public sealed class MenuBarWindow : Window
         }), DispatcherPriority.Loaded);
     }
 
+    // ---------- Ilha aberta (estilo NotchNook) ----------
+
+    private string _tab = "inicio";
+    private bool _dragging;
+
+    /// <summary>Conteúdo da ilha aberta: abas à esquerda, engrenagem à direita e a aba escolhida.</summary>
+    private (UIElement, Action?) Dashboard()
+    {
+        var root = new StackPanel { Width = 600 };
+
+        // Cabeçalho
+        var header = new DockPanel { Margin = new Thickness(2, 8, 2, 10) };
+        var right = new StackPanel { Orientation = Orientation.Horizontal };
+        right.Children.Add(new Widgets.PillButton("", () => { _popover.Close(); MainWindow.Current?.ExpandPinned(); }, false, 28) { ToolTip = "Abrir o assistente" });
+        right.Children.Add(new Widgets.PillButton("", () => { _popover.Close(); SettingsWindow.Open(); }, false, 28) { ToolTip = "Configurações" });
+        DockPanel.SetDock(right, Dock.Right);
+        header.Children.Add(right);
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var (key, glyph, text) in new[] { ("inicio", "", "Início"), ("bandeja", "", "Bandeja"), ("sistema", "", "Sistema") })
+        {
+            var selected = _tab == key;
+            var icon = Glyph(glyph);
+            icon.FontSize = 12;
+            var label = Text(text, 12.5, bold: selected);
+            var pill = new Border
+            {
+                Padding = new Thickness(10, 5, 12, 5),
+                Margin = new Thickness(0, 0, 4, 0),
+                CornerRadius = new CornerRadius(9),
+                Cursor = Cursors.Hand,
+                Background = selected ? new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent,
+                Opacity = selected ? 1 : 0.6,
+                Child = Row(icon, label),
+            };
+            var k = key;
+            pill.MouseEnter += (_, _) => { if (_tab != k) pill.Opacity = 0.9; };
+            pill.MouseLeave += (_, _) => { if (_tab != k) pill.Opacity = 0.6; };
+            pill.MouseLeftButtonUp += (_, _) =>
+            {
+                if (_tab == k) return;
+                _tab = k;
+                _popover.Reflow();
+            };
+            tabs.Children.Add(pill);
+        }
+        header.Children.Add(tabs);
+        root.Children.Add(header);
+
+        (UIElement View, Action? Update) body = _tab switch
+        {
+            "bandeja" => TrayView(),
+            "sistema" => SystemView(),
+            _ => HomeView(),
+        };
+        root.Children.Add(body.View);
+        return (root, body.Update);
+    }
+
+    private static Border Card(UIElement child, double width = double.NaN) => new()
+    {
+        Width = width,
+        CornerRadius = new CornerRadius(18),
+        Padding = new Thickness(12),
+        Margin = new Thickness(0, 0, 8, 0),
+        Background = new SolidColorBrush(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF)),
+        Child = child,
+    };
+
+    // Início: música (ou timer/saudação) + semana + avatar
+    private (UIElement, Action?) HomeView()
+    {
+        var media = MediaService.Instance;
+        var grid = new Grid { Height = 108 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        Action? update = null;
+
+        // Coluna 1
+        FrameworkElement first;
+        if (media.HasSession)
+        {
+            var cover = new Border { Width = 62, Height = 62, CornerRadius = new CornerRadius(14), Margin = new Thickness(0, 0, 12, 0) };
+            var title = Text("", 13.5, bold: true);
+            title.TextTrimming = TextTrimming.CharacterEllipsis;
+            var artist = Muted("");
+            artist.TextTrimming = TextTrimming.CharacterEllipsis;
+            artist.TextWrapping = TextWrapping.NoWrap;
+            var play = new Widgets.PillButton("", media.TogglePlayPause, false, 28);
+            var controls = Row(new Widgets.PillButton("", media.Previous, false, 26), play, new Widgets.PillButton("", media.Next, false, 26));
+            controls.Margin = new Thickness(-6, 4, 0, 0);
+            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            info.Children.Add(title);
+            info.Children.Add(artist);
+            info.Children.Add(controls);
+            var dock = new DockPanel();
+            DockPanel.SetDock(cover, Dock.Left);
+            dock.Children.Add(cover);
+            dock.Children.Add(info);
+            first = Card(dock);
+            update += () =>
+            {
+                title.Text = media.Title;
+                artist.Text = media.Artist;
+                if (media.Cover is { } img) cover.Background = new ImageBrush(img) { Stretch = Stretch.UniformToFill };
+                else cover.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+                play.Glyph = media.IsPlaying ? "" : "";
+            };
+        }
+        else
+        {
+            var hour = DateTime.Now.Hour;
+            var hello = Text(hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite", 20, bold: true);
+            var timerLine = Muted("");
+            var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            stack.Children.Add(hello);
+            stack.Children.Add(timerLine);
+            first = Card(stack);
+            update += () =>
+            {
+                var t = TimerService.Instance;
+                var sw = StopwatchService.Instance;
+                timerLine.Text = t.State != TimerState.Idle ? "Timer: " + (t.State == TimerState.Finished ? "acabou!" : TimerService.Format(t.Remaining))
+                    : sw.IsActive ? "Cronômetro: " + StopwatchService.Short(sw.Elapsed)
+                    : "Nada tocando agora";
+            };
+        }
+        grid.Children.Add(first);
+
+        // Coluna 2: semana
+        var week = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var monthRow = new DockPanel();
+        var month = Text(Capital(DateTime.Now.ToString("MMM", PtBr).TrimEnd('.')), 22, bold: true);
+        month.Margin = new Thickness(0, 0, 14, 0);
+        DockPanel.SetDock(month, Dock.Left);
+        monthRow.Children.Add(month);
+        var days = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = 7 };
+        var today = DateTime.Today;
+        for (var i = -3; i <= 3; i++)
+        {
+            var d = today.AddDays(i);
+            var isToday = i == 0;
+            var col = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            var dow = Text(d.ToString("ddd", PtBr).TrimEnd('.')[..Math.Min(3, d.ToString("ddd", PtBr).TrimEnd('.').Length)].ToUpper(PtBr), 8.5, bold: true);
+            dow.HorizontalAlignment = HorizontalAlignment.Center;
+            dow.Opacity = isToday ? 1 : 0.45;
+            var num = Text(d.Day.ToString("00"), 14, bold: isToday);
+            num.HorizontalAlignment = HorizontalAlignment.Center;
+            num.Opacity = isToday ? 1 : 0.45;
+            if (isToday)
+            {
+                dow.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+                num.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+            }
+            col.Children.Add(dow);
+            col.Children.Add(num);
+            days.Children.Add(col);
+        }
+        monthRow.Children.Add(days);
+        week.Children.Add(monthRow);
+        var sub = Muted(Capital(DateTime.Now.ToString("dddd, d 'de' MMMM", PtBr)));
+        sub.HorizontalAlignment = HorizontalAlignment.Center;
+        sub.Margin = new Thickness(0, 10, 0, 0);
+        week.Children.Add(sub);
+        var weekCard = Card(week);
+        weekCard.Cursor = Cursors.Hand;
+        weekCard.ToolTip = "Abrir calendário e notificações";
+        weekCard.MouseLeftButtonUp += (_, _) => { _popover.Close(); Native.WinCombo(0x4E); };
+        Grid.SetColumn(weekCard, 1);
+        grid.Children.Add(weekCard);
+
+        // Coluna 3: avatar (abre o assistente)
+        var avatar = new Border { Width = 70, Height = 70, CornerRadius = new CornerRadius(35), Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Abrir o assistente" };
+        if (Avatars.Find(_settings.Avatar)?.Image is { } img) avatar.Background = new ImageBrush(img) { Stretch = Stretch.UniformToFill };
+        else
+        {
+            avatar.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+            var g = Glyph("");
+            g.FontSize = 26;
+            g.Margin = new Thickness(0);
+            g.HorizontalAlignment = HorizontalAlignment.Center;
+            avatar.Child = g;
+        }
+        avatar.MouseLeftButtonUp += (_, _) => { _popover.Close(); MainWindow.Current?.ExpandPinned(); };
+        var avatarCard = Card(avatar);
+        avatarCard.Margin = new Thickness(0);
+        avatarCard.Padding = new Thickness(14);
+        Grid.SetColumn(avatarCard, 2);
+        grid.Children.Add(avatarCard);
+
+        return (grid, update);
+    }
+
+    // Bandeja: arquivos arrastados para a ilha (como uma prateleira)
+    private (UIElement, Action?) TrayView()
+    {
+        var items = _settings.IslandTray ??= new();
+        items.RemoveAll(p => !System.IO.File.Exists(p) && !System.IO.Directory.Exists(p));
+
+        var box = new Border
+        {
+            MinHeight = 108,
+            CornerRadius = new CornerRadius(18),
+            Padding = new Thickness(8),
+            BorderThickness = new Thickness(1.5),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(_dragging ? (byte)0x90 : (byte)0x30, 0xFF, 0xFF, 0xFF)),
+            Background = new SolidColorBrush(Color.FromArgb(0x0C, 0xFF, 0xFF, 0xFF)),
+        };
+        if (items.Count == 0)
+        {
+            var empty = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            var icon = Glyph("");
+            icon.FontSize = 22;
+            icon.HorizontalAlignment = HorizontalAlignment.Center;
+            icon.Margin = new Thickness(0, 0, 0, 6);
+            icon.Opacity = 0.6;
+            empty.Children.Add(icon);
+            var t = Muted("Arraste arquivos ou pastas até a ilha para deixar à mão");
+            t.TextAlignment = TextAlignment.Center;
+            empty.Children.Add(t);
+            box.Child = empty;
+        }
+        else
+        {
+            var wrap = new WrapPanel();
+            foreach (var path in items.ToList())
+            {
+                var name = System.IO.Path.GetFileName(path.TrimEnd('\\'));
+                if (string.IsNullOrEmpty(name)) name = path;
+                var icon = Native.GetIcon(path, 48) is { } src ? (UIElement)new Image { Source = src, Width = 34, Height = 34 } : Glyph("");
+                var label = Text(name, 10.5);
+                label.TextTrimming = TextTrimming.CharacterEllipsis;
+                label.TextAlignment = TextAlignment.Center;
+                label.HorizontalAlignment = HorizontalAlignment.Center;
+                label.MaxWidth = 76;
+                label.Margin = new Thickness(0, 5, 0, 0);
+                var stack = new StackPanel();
+                if (icon is FrameworkElement fe) fe.HorizontalAlignment = HorizontalAlignment.Center;
+                stack.Children.Add(icon);
+                stack.Children.Add(label);
+                var tile = new Border { Width = 84, Padding = new Thickness(4, 8, 4, 6), CornerRadius = new CornerRadius(12), Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = path, Child = stack };
+                tile.MouseEnter += (_, _) => tile.Background = new SolidColorBrush(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF));
+                tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
+                var p = path;
+                Point? down = null;
+                tile.PreviewMouseLeftButtonDown += (_, e) => down = e.GetPosition(tile);
+                tile.MouseMove += (_, e) =>
+                {
+                    // Arrastar para fora da ilha (para uma pasta, e-mail etc.).
+                    if (down is not { } start || e.LeftButton != MouseButtonState.Pressed) return;
+                    var now = e.GetPosition(tile);
+                    if (Math.Abs(now.X - start.X) < 6 && Math.Abs(now.Y - start.Y) < 6) return;
+                    down = null;
+                    DragDrop.DoDragDrop(tile, new DataObject(DataFormats.FileDrop, new[] { p }), DragDropEffects.Copy);
+                };
+                tile.MouseLeftButtonUp += (_, _) =>
+                {
+                    if (down is null) return;
+                    down = null;
+                    _popover.Close();
+                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(p) { UseShellExecute = true }); } catch (Exception) { }
+                };
+                var menu = new ContextMenu();
+                var remove = new MenuItem { Header = "Tirar da bandeja" };
+                remove.Click += (_, _) => { items.Remove(p); _settings.Save(); _popover.Reflow(); };
+                menu.Items.Add(remove);
+                menu.Opened += (_, _) => _dragging = true;
+                menu.Closed += (_, _) => _dragging = false;
+                tile.ContextMenu = menu;
+                wrap.Children.Add(tile);
+            }
+            box.Child = wrap;
+        }
+        return (box, null);
+    }
+
+    private void OnIslandDrop(object sender, DragEventArgs e)
+    {
+        _dragging = false;
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
+        {
+            var items = _settings.IslandTray ??= new();
+            foreach (var f in files)
+                if (!items.Contains(f, StringComparer.OrdinalIgnoreCase)) items.Add(f);
+            _settings.Save();
+        }
+        _tab = "bandeja";
+        if (_popover.IsOpen) _popover.Reflow(); else _popover.Open();
+    }
+
+    // Sistema: CPU/memória + rede + bateria
+    private (UIElement, Action?) SystemView()
+    {
+        var (cpu, cpuUpdate) = CpuPopover();
+        var (net, netUpdate) = NetworkPopover();
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.3, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var left = Card(cpu);
+        var rightStack = new StackPanel();
+        rightStack.Children.Add(net);
+        Action? update = cpuUpdate;
+        update += netUpdate;
+        if (_batteryItem.Visibility == Visibility.Visible)
+        {
+            var (bat, batUpdate) = BatteryPopover();
+            rightStack.Children.Add(bat);
+            update += batUpdate;
+        }
+        var right = Card(rightStack);
+        right.Margin = new Thickness(0);
+        Grid.SetColumn(right, 1);
+        grid.Children.Add(left);
+        grid.Children.Add(right);
+        return (grid, update);
+    }
+
     // ---------- Peças ----------
 
     private Border Item(UIElement content, Func<(UIElement, Action?)>? popover)
@@ -742,7 +1125,6 @@ public sealed class MenuBarWindow : Window
         };
         item.MouseEnter += (_, _) => item.Background = hover;
         item.MouseLeave += (_, _) => item.Background = Brushes.Transparent;
-        if (popover is not null) _popover.Attach(item, popover);
         return item;
     }
 
