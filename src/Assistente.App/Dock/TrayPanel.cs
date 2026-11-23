@@ -104,12 +104,12 @@ internal static class TrayPanel
         var card = new Border
         {
             Width = 300,
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(10, 12, 10, 10),
+            CornerRadius = new CornerRadius(26),
+            Padding = new Thickness(12, 14, 12, 12),
             Margin = new Thickness(14),
             BorderThickness = new Thickness(1),
             BorderBrush = new LinearGradientBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF), 90),
-            Background = new LinearGradientBrush(Color.FromArgb(0xF7, 0x26, 0x27, 0x30), Color.FromArgb(0xF7, 0x16, 0x17, 0x1D), 90),
+            Background = new LinearGradientBrush(Color.FromArgb(0xF7, 0x12, 0x12, 0x14), Color.FromArgb(0xFA, 0x00, 0x00, 0x00), 90),
             Effect = new DropShadowEffect { BlurRadius = 22, ShadowDepth = 5, Opacity = 0.5 },
             RenderTransformOrigin = new Point(0.5, 1),
             RenderTransform = Scale,

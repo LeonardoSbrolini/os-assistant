@@ -160,7 +160,7 @@ public partial class MainWindow : Window
             {
                 if (_expanded) return;
                 // Como o avatar fica sempre escondido, ele volta ao topo sem aparecer.
-                if (_settings.AvatarAutoHide && !CursorNearHandle()) SlideHandle(show: false, animate: false);
+                if (MenuBar.MenuBarWindow.Current is not null || (_settings.AvatarAutoHide && !CursorNearHandle())) SlideHandle(show: false, animate: false);
                 AnimateHandleIn();
             }));
         });
@@ -208,15 +208,16 @@ public partial class MainWindow : Window
         var easeIn = new CubicEase { EasingMode = EasingMode.EaseIn };
         if (show)
         {
-            sx = Tools.Anim.FromTo(0.94, 1, 240, ease);
-            sy = Tools.Anim.FromTo(0.90, 1, 240, ease);
-            fade = Tools.Anim.FromTo(0, 1, 180, ease);
+            // Sai da ilha do topo: começa estreito e baixinho e "desdobra" para baixo.
+            sx = Tools.Anim.FromTo(0.6, 1, 320, ease);
+            sy = Tools.Anim.FromTo(0.2, 1, 320, ease);
+            fade = Tools.Anim.FromTo(0, 1, 160, ease);
         }
         else
         {
-            sx = Tools.Anim.To(0.96, 170, easeIn);
-            sy = Tools.Anim.To(0.92, 170, easeIn);
-            fade = Tools.Anim.To(0, 170, easeIn);
+            sx = Tools.Anim.To(0.6, 220, easeIn);
+            sy = Tools.Anim.To(0.2, 220, easeIn);
+            fade = Tools.Anim.To(0, 200, easeIn);
         }
 
         // Termina quando a animação acaba (e só se nenhuma outra começou depois).
@@ -416,9 +417,9 @@ public partial class MainWindow : Window
     {
         // Painel flutuante estilo Mac: cantos arredondados nos quatro lados e um respiro da borda
         // da tela (a margem extra embaixo é o espaço da sombra).
-        ExpandedPanel.CornerRadius = new CornerRadius(16);
+        ExpandedPanel.CornerRadius = new CornerRadius(26);
         ExpandedPanel.BorderThickness = new Thickness(1);
-        Sidebar.CornerRadius = new CornerRadius(15, 0, 0, 15);
+        Sidebar.CornerRadius = new CornerRadius(25, 0, 0, 25);
         ExpandedPanel.Margin = _settings.Edge switch
         {
             DockEdge.Top => new Thickness(16, 8, 16, 24),
@@ -521,6 +522,13 @@ public partial class MainWindow : Window
     /// </summary>
     private void Peek()
     {
+        // Com a ilha (Dynamic Island) ligada, o assistente mora dentro dela: o avatar não aparece.
+        if (MenuBar.MenuBarWindow.Current is not null && !_expanded)
+        {
+            _handleWantHideSince = DateTime.MaxValue;
+            if (!_handleHidden) SlideHandle(show: false);
+            return;
+        }
         if (_expanded || !_settings.AvatarAutoHide)
         {
             _handleWantHideSince = DateTime.MaxValue;

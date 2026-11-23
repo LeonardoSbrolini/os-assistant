@@ -83,10 +83,11 @@ public static class ThemeService
     /// <summary>Fundo em degradê: um pouco mais claro em cima, mais escuro embaixo.</summary>
     private static Brush Gradient(Color c, byte alpha)
     {
-        static byte Shift(byte v, int d) => (byte)Math.Clamp(v + d, 0, 255);
+        // Estilo "Dynamic Island": quase preto, só um toque da cor do tema.
+        static byte Dark(byte v, double k) => (byte)Math.Clamp(v * k, 0, 255);
         var brush = new LinearGradientBrush(
-            Color.FromArgb(alpha, Shift(c.R, 10), Shift(c.G, 10), Shift(c.B, 12)),
-            Color.FromArgb(alpha, Shift(c.R, -8), Shift(c.G, -8), Shift(c.B, -6)), 90);
+            Color.FromArgb(alpha, Dark(c.R, 0.45), Dark(c.G, 0.45), Dark(c.B, 0.5)),
+            Color.FromArgb(alpha, Dark(c.R, 0.12), Dark(c.G, 0.12), Dark(c.B, 0.14)), 90);
         brush.Freeze();
         return brush;
     }

@@ -25,7 +25,7 @@ namespace Assistente.App.MenuBar;
 /// </summary>
 public sealed class MenuBarWindow : Window
 {
-    public const double BarHeight = 28;
+    public const double BarHeight = 34;
 
     public static MenuBarWindow? Current { get; private set; }
 
@@ -36,7 +36,10 @@ public sealed class MenuBarWindow : Window
     private readonly TranslateTransform _slide = new();
     private readonly StackPanel _left = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
     private readonly StackPanel _right = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-    private readonly Popover _popover = new();
+    private readonly IslandPopover _popover;
+    private readonly Grid _compact = new();
+    private readonly ContentControl _detail = new() { Focusable = false, Visibility = Visibility.Collapsed, Margin = new Thickness(8, 4, 8, 10) };
+    private readonly StackPanel _island = new();
     private readonly DispatcherTimer _watch = new() { Interval = TimeSpan.FromMilliseconds(120) };
 
     // Itens da direita
@@ -77,18 +80,32 @@ public sealed class MenuBarWindow : Window
         FontFamily = new FontFamily("Segoe UI");
         Foreground = Brushes.White;
 
-        // Fundo de vidro escuro com uma linha clara embaixo.
+        // "Dynamic Island": uma pílula preta no centro do topo que cresce para mostrar detalhes.
+        _popover = new IslandPopover(this);
         _bar.Height = BarHeight;
-        _bar.Background = new LinearGradientBrush(Color.FromArgb(0xE6, 0x16, 0x17, 0x1D), Color.FromArgb(0xD9, 0x10, 0x11, 0x16), 90);
-        _bar.BorderBrush = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF));
-        _bar.BorderThickness = new Thickness(0, 0, 0, 1);
-        _bar.Padding = new Thickness(10, 0, 10, 0);
+        _bar.Width = 200;
+        _bar.HorizontalAlignment = HorizontalAlignment.Center;
+        _bar.VerticalAlignment = VerticalAlignment.Top;
+        _bar.Margin = new Thickness(0, 6, 0, 0);
+        _bar.Background = new SolidColorBrush(Color.FromArgb(0xFA, 0x00, 0x00, 0x00));
+        _bar.BorderBrush = new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+        _bar.BorderThickness = new Thickness(1);
+        _bar.CornerRadius = new CornerRadius(BarHeight / 2);
+        _bar.Padding = new Thickness(8, 0, 8, 0);
+        _bar.ClipToBounds = true;
         _bar.RenderTransform = _slide;
+        _bar.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 3, Opacity = 0.35 };
 
-        var grid = new Grid();
-        grid.Children.Add(_left);
-        grid.Children.Add(_right);
-        _bar.Child = grid;
+        _compact.Height = BarHeight - 2;
+        _compact.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _compact.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 24 });
+        _compact.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_right, 2);
+        _compact.Children.Add(_left);
+        _compact.Children.Add(_right);
+        _island.Children.Add(_compact);
+        _island.Children.Add(_detail);
+        _bar.Child = _island;
         Content = _bar;
 
         BuildLeft();
@@ -104,7 +121,7 @@ public sealed class MenuBarWindow : Window
         _ramItem = Item(Row(Glyph(""), _ramText), CpuPopover);
         _batteryItem = Item(Row(_batteryGlyph, _batteryText), BatteryPopover);
         _clockItem = Item(Row(Glyph(""), _clockText), CalendarPopover);
-        foreach (var item in new[] { _timerItem, _musicItem, _netItem, _cpuItem, _ramItem, _batteryItem, _clockItem })
+        foreach (var item in new[] { _timerItem, _musicItem, _cpuItem, _batteryItem, _clockItem })
             _right.Children.Add(item);
 
         SourceInitialized += (_, _) =>
@@ -156,6 +173,7 @@ public sealed class MenuBarWindow : Window
         Current.UpdateTimer();
         Current.UpdateMusic();
         Current._watch.Start();
+        Current.Loaded += (_, _) => Current?.FitCompact();
         Current.BringAvatarToFront();
     }
 
@@ -175,11 +193,14 @@ public sealed class MenuBarWindow : Window
         if (_hwnd == IntPtr.Zero) _hwnd = new WindowInteropHelper(this).EnsureHandle();
         ReleaseSpace(); // versões antigas reservavam a faixa do topo
         var area = SystemParameters.WorkArea;
-        Left = area.Left;
+        Width = IslandMaxWidth + 40;
+        Height = IslandMaxHeight + 40;
+        Left = area.Left + (area.Width - Width) / 2;
         Top = area.Top;
-        Width = area.Width;
-        Height = BarHeight;
     }
+
+    private const double IslandMaxWidth = 560;
+    private const double IslandMaxHeight = 520;
 
     private void ReleaseSpace()
     {
@@ -238,21 +259,17 @@ public sealed class MenuBarWindow : Window
             logo.Child = new Image { Source = avatar, Width = 18, Height = 18 };
         }
 
-        var name = Text("Assistente", 13, bold: true);
-        var home = Item(Row(logo, name), null);
-        home.MouseLeftButtonUp += (_, _) => MainWindow.Current?.ExpandPinned();
-        _left.Children.Add(home);
-
-        void Link(string text, Action action)
+        logo.Margin = new Thickness(0);
+        logo.Width = logo.Height = 20;
+        logo.CornerRadius = new CornerRadius(10);
+        var home = Item(logo, AssistantPopover);
+        home.ToolTip = null;
+        home.MouseLeftButtonUp += (_, _) =>
         {
-            var item = Item(Text(text, 12.5), null);
-            item.MouseLeftButtonUp += (_, _) => action();
-            _left.Children.Add(item);
-        }
-        Link("Sistema", () => MainWindow.Current?.ShowTool("Visão geral"));
-        Link("Ferramentas", () => MainWindow.Current?.ExpandPinned());
-        Link("Música", () => MainWindow.Current?.ShowTool("Tocando agora"));
-        Link("Configurações", () => SettingsWindow.Open());
+            _popover.Close();
+            MainWindow.Current?.ExpandPinned();
+        };
+        _left.Children.Add(home);
     }
 
     // ---------- Atualizações ----------
@@ -274,7 +291,7 @@ public sealed class MenuBarWindow : Window
             _batteryGlyph.Text = power.PowerLineStatus == Forms.PowerLineStatus.Online ? "" : "";
         }
 
-        _clockText.Text = DateTime.Now.ToString("ddd d MMM  HH:mm", PtBr).Replace(".", "");
+        _clockText.Text = DateTime.Now.ToString("HH:mm", PtBr);
         _popover.Refresh();
     }
 
@@ -298,14 +315,16 @@ public sealed class MenuBarWindow : Window
         {
             _timerItem.Visibility = Visibility.Collapsed;
         }
+        FitCompact();
     }
 
     private void UpdateMusic()
     {
         var media = MediaService.Instance;
         _musicItem.Visibility = media.HasSession ? Visibility.Visible : Visibility.Collapsed;
-        _musicText.Text = media.Title.Length > 26 ? media.Title[..25] + "…" : media.Title;
+        _musicText.Text = media.Title.Length > 18 ? media.Title[..17] + "…" : media.Title;
         _popover.Refresh();
+        FitCompact();
     }
 
     // ---------- Mostrar / esconder ----------
@@ -313,16 +332,25 @@ public sealed class MenuBarWindow : Window
     private void Watch()
     {
         var dpi = VisualTreeHelper.GetDpi(this);
-        var rect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, BarHeight * dpi.DpiScaleY);
+        var islandLeft = Left + (Width - _bar.ActualWidth) / 2;
+        var rect = new Rect(islandLeft * dpi.DpiScaleX, Top * dpi.DpiScaleY, _bar.ActualWidth * dpi.DpiScaleX, (_bar.ActualHeight + 8) * dpi.DpiScaleY);
         var (cx, cy) = Native.CursorPosition();
-        // Só na área de trabalho: qualquer app na frente (aberto, não minimizado) esconde a barra.
-        var onDesktop = Native.ForegroundAppRect() is null && !Native.IsForegroundFullscreen();
-        var mouseHere = !_hidden && cy <= rect.Bottom && cx >= rect.Left && cx <= rect.Right;
-
-        if (onDesktop || mouseHere || _popover.IsOpen)
+        // Com o painel do assistente aberto a ilha sai de cena (o painel "sai" dela).
+        if (MainWindow.Current?.IsExpanded == true)
         {
             _wantHideSince = DateTime.MaxValue;
-            if (_hidden && onDesktop) Reveal(true);
+            if (!_hidden) Reveal(false);
+            return;
+        }
+        // Na área de trabalho fica à vista; com app aberto aparece ao levar o mouse ao topo, no meio.
+        var onDesktop = Native.ForegroundAppRect() is null && !Native.IsForegroundFullscreen();
+        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && cx >= rect.Left - 80 && cx <= rect.Right + 80 && !Native.IsForegroundFullscreen();
+        var mouseHere = !_hidden && rect.Contains(cx, cy);
+
+        if (onDesktop || mouseHere || atTopEdge || _popover.IsOpen)
+        {
+            _wantHideSince = DateTime.MaxValue;
+            if (_hidden && (onDesktop || atTopEdge)) Reveal(true);
             return;
         }
         if (_hidden) return;
@@ -335,7 +363,8 @@ public sealed class MenuBarWindow : Window
         if (_hidden == !show) return;
         _hidden = !show;
         if (!show) _popover.Close();
-        _slide.BeginAnimation(TranslateTransform.YProperty, Anim.To(show ? 0 : -BarHeight - 2, show ? 220 : 180, show ? Anim.EaseOut : Anim.EaseIn));
+        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = show ? System.Windows.Media.Animation.EasingMode.EaseOut : System.Windows.Media.Animation.EasingMode.EaseIn };
+        _slide.BeginAnimation(TranslateTransform.YProperty, Anim.To(show ? 0 : -(_bar.ActualHeight + 14), show ? 260 : 180, ease));
         if (show) BringAvatarToFront();
     }
 
@@ -551,17 +580,162 @@ public sealed class MenuBarWindow : Window
         });
     }
 
+    private (UIElement, Action?) AssistantPopover()
+    {
+        var panel = new StackPanel { MinWidth = 300 };
+        var title = Row(Text("Assistente", 15, bold: true));
+        title.Margin = new Thickness(2, 4, 0, 10);
+        panel.Children.Add(title);
+        var grid = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
+        void Action(string glyph, string text, Action click)
+        {
+            var icon = Glyph(glyph);
+            icon.Margin = new Thickness(0, 0, 8, 0);
+            icon.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+            var b = new Border
+            {
+                Margin = new Thickness(3),
+                Padding = new Thickness(10, 9, 10, 9),
+                CornerRadius = new CornerRadius(12),
+                Background = new SolidColorBrush(Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF)),
+                Cursor = Cursors.Hand,
+                Child = Row(icon, Text(text, 12.5)),
+            };
+            b.MouseEnter += (_, _) => b.Background = new SolidColorBrush(Color.FromArgb(0x2A, 0xFF, 0xFF, 0xFF));
+            b.MouseLeave += (_, _) => b.Background = new SolidColorBrush(Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
+            b.MouseLeftButtonUp += (_, _) => { _popover.Close(); click(); };
+            grid.Children.Add(b);
+        }
+        Action("", "Ferramentas", () => MainWindow.Current?.ExpandPinned());
+        Action("", "Sistema", () => MainWindow.Current?.ShowTool("Visão geral"));
+        Action("", "Música", () => MainWindow.Current?.ShowTool("Tocando agora"));
+        Action("", "Configurações", () => SettingsWindow.Open());
+        panel.Children.Add(grid);
+        return (panel, null);
+    }
+
+    /// <summary>
+    /// Faz a ilha crescer (com animação "elástica", como a Dynamic Island) mostrando o
+    /// conteúdo do item em que o mouse está, e voltar a ser pílula quando o mouse sai.
+    /// </summary>
+    private sealed class IslandPopover
+    {
+        private readonly MenuBarWindow _w;
+        private readonly DispatcherTimer _close = new() { Interval = TimeSpan.FromMilliseconds(280) };
+        private FrameworkElement? _owner;
+        private Action? _update;
+        private int _token;
+
+        public IslandPopover(MenuBarWindow w)
+        {
+            _w = w;
+            _close.Tick += (_, _) =>
+            {
+                _close.Stop();
+                if (_w._bar.IsMouseOver) return;
+                Close();
+            };
+            _w._bar.MouseLeave += (_, _) => { if (IsOpen) _close.Start(); };
+            _w._bar.MouseEnter += (_, _) => _close.Stop();
+        }
+
+        public bool IsOpen { get; private set; }
+
+        public void Attach(FrameworkElement owner, Func<(UIElement View, Action? Update)> build)
+        {
+            owner.MouseEnter += (_, _) => Open(owner, build);
+        }
+
+        public void Open(FrameworkElement owner, Func<(UIElement View, Action? Update)> build)
+        {
+            _close.Stop();
+            if (IsOpen && ReferenceEquals(_owner, owner)) return;
+            _owner = owner;
+            var (view, update) = build();
+            _update = update;
+            _w._detail.Content = view;
+            _w._detail.Visibility = Visibility.Visible;
+            update?.Invoke();
+            IsOpen = true;
+
+            _w._island.Measure(new Size(IslandMaxWidth - 20, double.PositiveInfinity));
+            var size = _w._island.DesiredSize;
+            var width = Math.Min(IslandMaxWidth, Math.Max(_w.CompactWidth(), size.Width + 20));
+            var height = Math.Min(IslandMaxHeight, size.Height + 2);
+            _w._bar.CornerRadius = new CornerRadius(26);
+            _w.ResizeIsland(width, height, expand: true);
+            _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 200, null, 90));
+        }
+
+        public void Refresh()
+        {
+            if (IsOpen) _update?.Invoke();
+        }
+
+        public void Close()
+        {
+            _close.Stop();
+            if (!IsOpen) return;
+            IsOpen = false;
+            _owner = null;
+            _update = null;
+            var token = ++_token;
+            var fade = Anim.To(0, 90);
+            fade.Completed += (_, _) =>
+            {
+                if (token != _token || IsOpen) return;
+                _w._detail.Visibility = Visibility.Collapsed;
+                _w._detail.Content = null;
+                _w._bar.CornerRadius = new CornerRadius(BarHeight / 2);
+                _w.ResizeIsland(_w.CompactWidth(), BarHeight, expand: false);
+            };
+            _w._detail.BeginAnimation(UIElement.OpacityProperty, fade);
+        }
+    }
+
+    /// <summary>Largura da pílula fechada (cabe o avatar e os itens visíveis).</summary>
+    private double CompactWidth()
+    {
+        _left.Measure(new Size(double.PositiveInfinity, BarHeight));
+        _right.Measure(new Size(double.PositiveInfinity, BarHeight));
+        return Math.Max(180, _left.DesiredSize.Width + _right.DesiredSize.Width + 24 + 18);
+    }
+
+    private void ResizeIsland(double width, double height, bool expand)
+    {
+        System.Windows.Media.Animation.IEasingFunction ease = expand
+            ? new System.Windows.Media.Animation.BackEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut, Amplitude = 0.25 }
+            : new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+        var ms = expand ? 380 : 260;
+        if (double.IsNaN(_bar.Width)) _bar.Width = _bar.ActualWidth > 0 ? _bar.ActualWidth : width;
+        if (double.IsNaN(_bar.Height)) _bar.Height = _bar.ActualHeight > 0 ? _bar.ActualHeight : height;
+        _bar.BeginAnimation(WidthProperty, Anim.To(width, ms, ease));
+        _bar.BeginAnimation(HeightProperty, Anim.To(height, ms, ease));
+    }
+
+    /// <summary>Pílula fechada acompanha os itens que aparecem/somem (timer, música).</summary>
+    private void FitCompact()
+    {
+        if (_popover.IsOpen || !IsLoaded) return;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_popover.IsOpen) return;
+            var w = CompactWidth();
+            if (Math.Abs(w - _bar.ActualWidth) > 1) ResizeIsland(w, BarHeight, expand: false);
+        }), DispatcherPriority.Loaded);
+    }
+
     // ---------- Peças ----------
 
     private Border Item(UIElement content, Func<(UIElement, Action?)>? popover)
     {
-        var hover = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF));
+        var hover = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF));
         var item = new Border
         {
             Child = content,
-            Padding = new Thickness(8, 0, 8, 0),
+            Padding = new Thickness(7, 0, 7, 0),
             Margin = new Thickness(1, 3, 1, 3),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(10),
             Background = Brushes.Transparent,
             Cursor = Cursors.Hand,
             VerticalAlignment = VerticalAlignment.Stretch,

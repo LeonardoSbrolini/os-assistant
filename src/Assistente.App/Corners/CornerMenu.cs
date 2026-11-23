@@ -128,12 +128,12 @@ public sealed class CornerMenu : Window
         _card = new Border
         {
             Width = PanelWidth,
-            CornerRadius = new CornerRadius(18),
-            Padding = new Thickness(12, 14, 12, 12),
+            CornerRadius = new CornerRadius(28),
+            Padding = new Thickness(14, 16, 14, 14),
             Margin = new Thickness(ShadowSpace),
             BorderThickness = new Thickness(1),
             BorderBrush = new LinearGradientBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF), 90),
-            Background = new LinearGradientBrush(Color.FromArgb(0xF2, 0x26, 0x27, 0x30), Color.FromArgb(0xF2, 0x15, 0x16, 0x1C), 90),
+            Background = new LinearGradientBrush(Color.FromArgb(0xF7, 0x12, 0x12, 0x14), Color.FromArgb(0xFA, 0x00, 0x00, 0x00), 90),
             Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 4, Opacity = 0.5 },
             RenderTransform = _slide,
             Child = content,

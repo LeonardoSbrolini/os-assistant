@@ -41,7 +41,7 @@
 
         <!-- Sombra do painel (separada e em cache para não pesar) -->
         <Border x:Name="PanelShadow" Visibility="{Binding Visibility, ElementName=ExpandedPanel}"
-                Margin="{Binding Margin, ElementName=ExpandedPanel}" CornerRadius="16" Background="{DynamicResource PanelBrush}"
+                Margin="{Binding Margin, ElementName=ExpandedPanel}" CornerRadius="26" Background="{DynamicResource PanelBrush}"
                 RenderTransformOrigin="{Binding RenderTransformOrigin, ElementName=ExpandedPanel}"
                 RenderTransform="{Binding RenderTransform, ElementName=ExpandedPanel}"
                 Opacity="{Binding Opacity, ElementName=ExpandedPanel}" IsHitTestVisible="False">
@@ -75,7 +75,7 @@
                         CornerRadius="15,0,0,15" x:Name="Sidebar">
                     <DockPanel>
                         <!-- Botões de janela estilo Mac: vermelho recolhe, verde fixa aberto -->
-                        <StackPanel x:Name="WindowDots" DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,14,0,8" Background="Transparent">
+                        <StackPanel x:Name="WindowDots" DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,16,0,8" Background="Transparent">
                             <Border x:Name="CloseDot" Width="13" Height="13" CornerRadius="6.5" Background="#FF5F57"
                                     BorderBrush="#33000000" BorderThickness="0.5" Cursor="Hand" ToolTip="Recolher"
                                     MouseLeftButtonUp="CollapseButton_Click">

@@ -151,14 +151,14 @@ public sealed class SettingsWindow : Window
         _host.Margin = new Thickness(20, 4, 16, 16);
         body.Children.Add(_host);
 
-        var glow = new Border { CornerRadius = new CornerRadius(14), IsHitTestVisible = false };
+        var glow = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
         glow.SetResourceReference(Border.BackgroundProperty, "PanelGlowBrush");
         var layers = new Grid();
         layers.Children.Add(glow);
         layers.Children.Add(body);
         var root = new Border
         {
-            CornerRadius = new CornerRadius(14),
+            CornerRadius = new CornerRadius(22),
             BorderThickness = new Thickness(1),
             Child = layers,
             Margin = new Thickness(10), // espaço para a sombra
@@ -211,7 +211,7 @@ public sealed class SettingsWindow : Window
         time.FontSize = 14;
         time.Click += (_, _) => { _settings.TimeWidget = time.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
 
-        var menuBar = Ui.Check("Barra fina no topo com informações (CPU, memória, bateria, relógio) quando não houver janela aberta", _settings.MenuBarEnabled);
+        var menuBar = Ui.Check("Ilha no topo (estilo Dynamic Island) com o assistente, relógio, CPU, bateria, música e timer", _settings.MenuBarEnabled);
         menuBar.FontSize = 14;
         menuBar.Margin = new Thickness(0, 0, 0, 10);
         menuBar.Click += (_, _) => { _settings.MenuBarEnabled = menuBar.IsChecked == true; _settings.Save(); MenuBar.MenuBarWindow.Apply(_settings); };
