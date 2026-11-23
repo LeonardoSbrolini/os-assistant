@@ -398,6 +398,14 @@ internal static class Native
         return new Rect(data.Rc.Left, data.Rc.Top, data.Rc.Right - data.Rc.Left, data.Rc.Bottom - data.Rc.Top);
     }
 
+    /// <summary>Põe a janela por cima de tudo (inclusive da barra do Windows), sem ativar.</summary>
+    public static void BringToTop(IntPtr hwnd)
+    {
+        if (hwnd != IntPtr.Zero) SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+    }
+
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
     public static void UnregisterBar(IntPtr hwnd)
     {
         var data = new AppBarData { Size = Marshal.SizeOf<AppBarData>(), Hwnd = hwnd };

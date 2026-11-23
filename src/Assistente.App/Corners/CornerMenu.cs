@@ -35,6 +35,8 @@ public sealed class CornerMenu : Window
 
     private readonly bool _isLeft;
     private readonly Border _card;
+    private readonly Grid _root = new();
+    private const double EarSize = 16;
     private readonly WrapPanel _tiles = new();
     private readonly ContentControl _body = new() { Focusable = false };
     private readonly StackPanel _tabs = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 0, 4, 12) };
@@ -99,8 +101,7 @@ public sealed class CornerMenu : Window
         Title = isLeft ? "Assistente Canto Esquerdo" : "Assistente Canto Direito";
         FontFamily = new FontFamily("Segoe UI");
         Foreground = Brushes.White;
-        Width = PanelWidth + ShadowSpace * 2;
-        SizeToContent = SizeToContent.Height;
+        SizeToContent = SizeToContent.WidthAndHeight;
 
         var title = new TextBlock
         {
@@ -125,20 +126,65 @@ public sealed class CornerMenu : Window
         if (isLeft) content.Children.Add(_tabs);
         content.Children.Add(_body);
 
+        // Preto e grudado na borda da tela, como a ilha do topo: só os cantos "de dentro" são
+        // arredondados e as orelhas curvas se encontram com a borda.
         _card = new Border
         {
             Width = PanelWidth,
-            CornerRadius = new CornerRadius(28),
-            Padding = new Thickness(14, 16, 14, 14),
-            Margin = new Thickness(ShadowSpace),
-            BorderThickness = new Thickness(1),
-            BorderBrush = new LinearGradientBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF), 90),
-            Background = new LinearGradientBrush(Color.FromArgb(0xF7, 0x12, 0x12, 0x14), Color.FromArgb(0xFA, 0x00, 0x00, 0x00), 90),
-            Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 4, Opacity = 0.5 },
-            RenderTransform = _slide,
+            CornerRadius = isLeft ? new CornerRadius(0, 28, 28, 0) : new CornerRadius(28, 0, 0, 0),
+            Padding = isLeft ? new Thickness(14, 18, 16, 16) : new Thickness(16, 18, 14, 16),
+            Background = Ears.Black,
             Child = content,
         };
-        Content = _card;
+        _root.RenderTransform = _slide;
+        if (isLeft)
+        {
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var top = Ears.Make(Ears.Kind.LeftTop, EarSize, Ears.Black);
+            var bottom = Ears.Make(Ears.Kind.LeftBottom, EarSize, Ears.Black);
+            top.HorizontalAlignment = bottom.HorizontalAlignment = HorizontalAlignment.Left;
+            Grid.SetRow(_card, 1);
+            Grid.SetRow(bottom, 2);
+            _root.Children.Add(top);
+            _root.Children.Add(_card);
+            _root.Children.Add(bottom);
+        }
+        else
+        {
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var top = Ears.Make(Ears.Kind.RightTop, EarSize, Ears.Black);
+            var left = Ears.Make(Ears.Kind.BottomLeft, EarSize, Ears.Black);
+            top.HorizontalAlignment = HorizontalAlignment.Right;
+            left.VerticalAlignment = VerticalAlignment.Bottom;
+            Grid.SetColumn(top, 1);
+            Grid.SetRow(left, 1);
+            Grid.SetRow(_card, 1);
+            Grid.SetColumn(_card, 1);
+            _root.Children.Add(top);
+            _root.Children.Add(left);
+            _root.Children.Add(_card);
+        }
+        Content = _root;
+        // Conteúdo mudou de tamanho (aba, formulário): continua grudado na borda certa.
+        SizeChanged += (_, _) =>
+        {
+            if (!_open) return;
+            if (_isLeft)
+            {
+                var area = SystemParameters.WorkArea;
+                Top = Math.Max(area.Top, area.Top + (area.Height - ActualHeight) / 2);
+            }
+            else
+            {
+                Left = SystemParameters.PrimaryScreenWidth - ActualWidth;
+                Top = Math.Max(0, SystemParameters.PrimaryScreenHeight - ActualHeight);
+            }
+        };
 
         SourceInitialized += (_, _) =>
         {
@@ -205,22 +251,24 @@ public sealed class CornerMenu : Window
         var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
         if (_isLeft)
         {
-            Left = area.Left - ShadowSpace + 8;
-            Top = Math.Max(area.Top + 8, area.Top + (area.Height - ActualHeight) / 2);
+            // Grudado na borda esquerda, no meio da tela.
+            Left = 0;
+            Top = Math.Max(area.Top, area.Top + (area.Height - ActualHeight) / 2);
             _slide.BeginAnimation(TranslateTransform.YProperty, null);
             _slide.Y = 0;
-            _slide.BeginAnimation(TranslateTransform.XProperty, Anim.FromTo(-(PanelWidth + ShadowSpace), 0, 260, ease));
+            _slide.BeginAnimation(TranslateTransform.XProperty, Anim.FromTo(-ActualWidth, 0, 280, ease));
         }
         else
         {
-            // Canto de baixo à direita: sobe do canto, logo acima da barra do Windows.
-            Left = area.Right - Width + ShadowSpace - 8;
-            Top = Math.Max(area.Top + 8, area.Bottom - ActualHeight + ShadowSpace - 8);
+            // Grudado no canto de baixo à direita da tela (por cima da barra do Windows).
+            Left = SystemParameters.PrimaryScreenWidth - ActualWidth;
+            Top = Math.Max(0, SystemParameters.PrimaryScreenHeight - ActualHeight);
             _slide.BeginAnimation(TranslateTransform.XProperty, null);
             _slide.X = 0;
-            _slide.BeginAnimation(TranslateTransform.YProperty, Anim.FromTo(80, 0, 260, ease));
+            _slide.BeginAnimation(TranslateTransform.YProperty, Anim.FromTo(ActualHeight, 0, 300, ease));
+            Native.BringToTop(new WindowInteropHelper(this).Handle);
         }
-        _card.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 180));
+        _root.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 160));
     }
 
     private void Hide(bool animate)
@@ -234,12 +282,12 @@ public sealed class CornerMenu : Window
             base.Hide();
             return;
         }
-        var to = _isLeft ? -(PanelWidth + ShadowSpace) : 80;
+        var to = _isLeft ? -ActualWidth : ActualHeight;
         var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn };
         var slide = Anim.To(to, 200, ease);
         slide.Completed += (_, _) => { if (!_open) base.Hide(); };
         _slide.BeginAnimation(_isLeft ? TranslateTransform.XProperty : TranslateTransform.YProperty, slide);
-        _card.BeginAnimation(OpacityProperty, Anim.To(0, 200));
+        _root.BeginAnimation(OpacityProperty, Anim.To(0, 200));
     }
 
     // ---------- Conteúdo ----------

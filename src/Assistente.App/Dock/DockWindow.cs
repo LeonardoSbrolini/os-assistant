@@ -26,7 +26,10 @@ public sealed class DockWindow : Window
     public static DockWindow? Current { get; private set; }
 
     private const double ShelfPad = 6;
-    private const double BottomMargin = 6;
+    private const double BottomMargin = 0;
+    private const double EarSize = 14;
+    private readonly System.Windows.Shapes.Path _earLeft = Ears.Make(Ears.Kind.BottomLeft, EarSize, Ears.Black);
+    private readonly System.Windows.Shapes.Path _earRight = Ears.Make(Ears.Kind.BottomRight, EarSize, Ears.Black);
     private const uint AppBarCallback = 0x0400 + 0x1D0; // WM_USER + n
 
     private readonly AppSettings _settings;
@@ -70,13 +73,20 @@ public sealed class DockWindow : Window
         Title = "Assistente Dock";
         FontFamily = new FontFamily("Segoe UI");
 
-        _shelf.CornerRadius = new CornerRadius(18);
-        _shelf.BorderThickness = new Thickness(1);
+        // Grudado na borda de baixo como a ilha do topo: cantos de cima arredondados e
+        // "orelhas" curvas que se encontram com a borda da tela.
+        _shelf.CornerRadius = new CornerRadius(22, 22, 0, 0);
+        _shelf.BorderThickness = new Thickness(0);
         _shelf.VerticalAlignment = VerticalAlignment.Bottom;
         _shelf.HorizontalAlignment = HorizontalAlignment.Center;
         _shelf.Margin = new Thickness(0, 0, 0, BottomMargin);
-        _shelf.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
-        _shelf.SetResourceReference(Border.BorderBrushProperty, "BorderBrush");
+        _shelf.Background = Ears.Black;
+        foreach (var ear in new[] { _earLeft, _earRight })
+        {
+            ear.VerticalAlignment = VerticalAlignment.Bottom;
+            ear.HorizontalAlignment = HorizontalAlignment.Center;
+            ear.RenderTransform = new TranslateTransform();
+        }
 
         // Quase transparente: a faixa inteira recebe o mouse (para o zoom).
         _items.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
@@ -105,6 +115,8 @@ public sealed class DockWindow : Window
             UpdateTargets();
         };
         _content.RenderTransform = _slide;
+        _content.Children.Add(_earLeft);
+        _content.Children.Add(_earRight);
         _content.Children.Add(_shelf);
         _content.Children.Add(_items);
         Content = _content;
@@ -380,8 +392,8 @@ public sealed class DockWindow : Window
             if (_appBar) Native.UnregisterBar(_hwnd);
             _appBar = false;
             _barRect = null;
-            // Com a barra do Windows escondida o dock encosta na borda da tela.
-            bottom = TaskbarHidden ? SystemParameters.PrimaryScreenHeight : SystemParameters.WorkArea.Bottom;
+            // Encosta na borda de baixo da tela (por cima da barra do Windows quando aparece).
+            bottom = SystemParameters.PrimaryScreenHeight;
         }
 
         Left = (SystemParameters.PrimaryScreenWidth - width) / 2;
@@ -399,7 +411,11 @@ public sealed class DockWindow : Window
     {
         if (_hidden == !show && animate) return;
         _hidden = !show;
-        if (show) _revealedAt = DateTime.Now;
+        if (show)
+        {
+            _revealedAt = DateTime.Now;
+            Native.BringToTop(_hwnd);
+        }
         else
         {
             _mouseX = null;
@@ -518,6 +534,8 @@ public sealed class DockWindow : Window
             x += slot;
         }
         _shelf.Width = Math.Max(0, total + 2 * ShelfPad);
+        ((TranslateTransform)_earLeft.RenderTransform).X = -(_shelf.Width / 2 + EarSize / 2);
+        ((TranslateTransform)_earRight.RenderTransform).X = _shelf.Width / 2 + EarSize / 2;
     }
 
     // ---------- Mostrar / esconder ----------
