@@ -107,7 +107,12 @@ public sealed class MenuBarWindow : Window
         foreach (var item in new[] { _timerItem, _musicItem, _netItem, _cpuItem, _ramItem, _batteryItem, _clockItem })
             _right.Children.Add(item);
 
-        SourceInitialized += (_, _) => MakeToolWindow(new WindowInteropHelper(this).Handle);
+        SourceInitialized += (_, _) =>
+        {
+            _hwnd = new WindowInteropHelper(this).Handle;
+            MakeToolWindow(_hwnd);
+            HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
+        };
         _watch.Tick += (_, _) => Watch();
         MetricsService.Instance.Sampled += Update;
         TimerService.Instance.Ticked += UpdateTimer;
@@ -117,10 +122,11 @@ public sealed class MenuBarWindow : Window
         MediaService.Instance.Changed += UpdateMusic;
         SystemParameters.StaticPropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(SystemParameters.WorkArea)) Dispatcher.BeginInvoke(new Action(Place));
+            if (e.PropertyName == nameof(SystemParameters.WorkArea) && !_appBar) Dispatcher.BeginInvoke(new Action(Place));
         };
         Closed += (_, _) =>
         {
+            ReleaseSpace();
             _watch.Stop();
             _popover.Close();
             MetricsService.Instance.Sampled -= Update;
@@ -153,14 +159,78 @@ public sealed class MenuBarWindow : Window
         Current.BringAvatarToFront();
     }
 
+    // ---------- Espaço reservado no topo ----------
+
+    private const int AppBarCallback = 0x0400 + 0x52; // WM_USER + n
+    private IntPtr _hwnd;
+    private bool _appBar;
+    private DateTime _lastBarChange = DateTime.MinValue;
+
+    /// <summary>
+    /// A barra reserva a faixa dela no topo (como a barra do Windows faz embaixo): os apps
+    /// maximizados ficam logo abaixo e nunca ficam por baixo dela.
+    /// </summary>
     private void Place()
     {
-        var area = SystemParameters.WorkArea;
-        Left = area.Left;
-        Top = area.Top;
-        Width = area.Width;
+        if (_hwnd == IntPtr.Zero) _hwnd = new WindowInteropHelper(this).EnsureHandle();
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var px = (int)Math.Ceiling(BarHeight * dpi.DpiScaleY);
+        var rect = Native.RegisterTopBar(_hwnd, px, AppBarCallback, _appBar);
+        _appBar = rect is not null;
+        _lastBarChange = DateTime.Now;
+        if (rect is { } r)
+        {
+            Left = r.Left / dpi.DpiScaleX;
+            Top = r.Top / dpi.DpiScaleY;
+            Width = r.Width / dpi.DpiScaleX;
+        }
+        else
+        {
+            var area = SystemParameters.WorkArea;
+            Left = area.Left;
+            Top = area.Top;
+            Width = area.Width;
+        }
         Height = BarHeight;
     }
+
+    private void ReleaseSpace()
+    {
+        if (_appBar && _hwnd != IntPtr.Zero) Native.UnregisterBar(_hwnd);
+        _appBar = false;
+    }
+
+    /// <summary>Devolve o espaço ao fechar o app (chamado também em caso de erro).</summary>
+    public static void ReleaseSafe()
+    {
+        try
+        {
+            Current?.ReleaseSpace();
+        }
+        catch (Exception)
+        {
+            // Saindo de qualquer jeito.
+        }
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == AppBarCallback && _appBar)
+        {
+            switch (wParam.ToInt32())
+            {
+                case 1 when DateTime.Now - _lastBarChange > TimeSpan.FromMilliseconds(500): // ABN_POSCHANGED
+                    Dispatcher.BeginInvoke(new Action(Place));
+                    break;
+                case 2: // ABN_FULLSCREENAPP: vídeo/jogo em tela cheia
+                    _fullscreen = lParam != IntPtr.Zero;
+                    break;
+            }
+        }
+        return IntPtr.Zero;
+    }
+
+    private bool _fullscreen;
 
     // ---------- Lado esquerdo: nome e atalhos ----------
 
@@ -258,8 +328,10 @@ public sealed class MenuBarWindow : Window
         var dpi = VisualTreeHelper.GetDpi(this);
         var rect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, BarHeight * dpi.DpiScaleY);
         var (cx, cy) = Native.CursorPosition();
-        var fg = Native.ForegroundAppRect();
-        var covered = fg is { } r && r.IntersectsWith(rect);
+        // Com o espaço reservado nada fica por cima da barra: ela só sai de cena com algo em tela cheia.
+        var covered = _appBar
+            ? _fullscreen || Native.IsForegroundFullscreen()
+            : Native.ForegroundAppRect() is { } r && r.IntersectsWith(rect);
         var mouseHere = cy <= rect.Bottom + (_hidden ? -rect.Height + 2 : 0) && cx >= rect.Left && cx <= rect.Right;
 
         if (!covered || mouseHere || _popover.IsOpen)

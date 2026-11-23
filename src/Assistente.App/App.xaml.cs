@@ -51,6 +51,7 @@ public partial class App : Application
 
     private static void RestoreTaskbarSafe()
     {
+        MenuBar.MenuBarWindow.ReleaseSafe();
         try
         {
             if (Assistente.App.MainWindow.Current is { } main && main.Settings.DockTaskbarWasAutoHide is not null)
@@ -78,6 +79,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         if (Assistente.App.MainWindow.Current is { } main) Docking.DockWindow.Shutdown(main.Settings);
+        MenuBar.MenuBarWindow.ReleaseSafe();
         _tray?.Dispose();
         if (_singleInstance is not null)
         {

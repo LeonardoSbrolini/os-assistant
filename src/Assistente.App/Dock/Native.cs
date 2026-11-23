@@ -380,6 +380,24 @@ internal static class Native
         return new Rect(data.Rc.Left, data.Rc.Top, data.Rc.Right - data.Rc.Left, data.Rc.Bottom - data.Rc.Top);
     }
 
+    /// <summary>
+    /// Reserva uma faixa no topo da tela (como a barra de menus do Mac): janelas maximizadas
+    /// ficam abaixo dela. Retorna a faixa obtida em pixels.
+    /// </summary>
+    public static Rect? RegisterTopBar(IntPtr hwnd, int heightPx, uint callbackMessage, bool alreadyRegistered)
+    {
+        var data = new AppBarData { Size = Marshal.SizeOf<AppBarData>(), Hwnd = hwnd, CallbackMessage = callbackMessage };
+        if (!alreadyRegistered && SHAppBarMessage(AbmNew, ref data) == IntPtr.Zero) return null;
+
+        var screenW = GetSystemMetrics(SmCxScreen);
+        data.Edge = AbeTop;
+        data.Rc = new NativeRect { Left = 0, Right = screenW, Top = 0, Bottom = heightPx };
+        SHAppBarMessage(AbmQueryPos, ref data);
+        data.Rc.Bottom = data.Rc.Top + heightPx;
+        SHAppBarMessage(AbmSetPos, ref data);
+        return new Rect(data.Rc.Left, data.Rc.Top, data.Rc.Right - data.Rc.Left, data.Rc.Bottom - data.Rc.Top);
+    }
+
     public static void UnregisterBar(IntPtr hwnd)
     {
         var data = new AppBarData { Size = Marshal.SizeOf<AppBarData>(), Hwnd = hwnd };
@@ -410,7 +428,7 @@ internal static class Native
     private const uint ShgfiLargeIcon = 0x0;
     private const uint AbmNew = 0, AbmRemove = 1, AbmQueryPos = 2, AbmSetPos = 3, AbmGetState = 4, AbmSetState = 10;
     private const int AbsAutoHide = 1, AbsAlwaysOnTop = 2;
-    private const uint AbeBottom = 3;
+    private const uint AbeBottom = 3, AbeTop = 1;
     private const int SmCxScreen = 0, SmCyScreen = 1;
     private const byte VkLWin = 0x5B;
     private const byte VkReturn = 0x0D;
