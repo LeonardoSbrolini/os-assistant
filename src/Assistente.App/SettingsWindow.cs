@@ -13,8 +13,8 @@ using Assistente.App.Tools;
 namespace Assistente.App;
 
 /// <summary>
-/// Janela de configurações (separada do painel): geral, aparência e temas,
-/// avatar, posição, chat de IA e atualizações.
+/// Janela de configurações no mesmo estilo da ilha: fundo preto, cantos bem arredondados,
+/// bolinhas de janela estilo Mac e um menu lateral agrupado por seções.
 /// </summary>
 public sealed class SettingsWindow : Window
 {
@@ -24,10 +24,37 @@ public sealed class SettingsWindow : Window
 
     private readonly MainWindow _main;
     private readonly AppSettings _settings;
-    private readonly ListBox _nav = new() { Padding = new Thickness(0, 6, 0, 6) };
+    private readonly StackPanel _nav = new() { Margin = new Thickness(10, 0, 10, 12) };
+    private readonly Dictionary<string, Border> _navRows = new();
     private readonly ContentControl _host = new() { Focusable = false };
     private readonly Dictionary<string, Func<FrameworkElement>> _pages = new();
     private readonly Dictionary<string, FrameworkElement> _built = new();
+    private string? _current;
+
+    private static readonly Dictionary<string, string> Subtitles = new()
+    {
+        ["Geral"] = "O básico: iniciar com o Windows e o tempo para recolher.",
+        ["Ilha e menus"] = "A ilha do topo, os menus dos cantos e o menu em círculo.",
+        ["Dock"] = "A barra de aplicativos que aparece embaixo.",
+        ["Barra de tarefas"] = "Como a barra do Windows se comporta.",
+        ["Aparência"] = "Cores, tema e transparência.",
+        ["Avatar"] = "O personagem do Assistente.",
+        ["Posição"] = "Onde o Assistente fica na tela.",
+        ["Chat IA"] = "Conecte uma IA para conversar com o Assistente.",
+        ["Atualizações"] = "Versão instalada e novidades.",
+    };
+
+    private static readonly Brush WindowBlack = Frozen(new SolidColorBrush(Color.FromRgb(0x0B, 0x0B, 0x0D)));
+    private static readonly Brush SidebarBlack = Frozen(new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x17)));
+    private static readonly Brush RowHover = Frozen(new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush RowSelected = Frozen(new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush Muted = Frozen(new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0x96)));
+
+    private static Brush Frozen(Brush b)
+    {
+        b.Freeze();
+        return b;
+    }
 
     /// <summary>Abre a janela (ou traz para frente, se já estiver aberta).</summary>
     public static void Open(string? page = null)
@@ -49,8 +76,8 @@ public sealed class SettingsWindow : Window
         _settings = _main.Settings;
 
         Title = "Configurações do Assistente";
-        Width = 820;
-        Height = 600;
+        Width = 860;
+        Height = 620;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -63,31 +90,30 @@ public sealed class SettingsWindow : Window
         Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/app.ico"));
 
         _pages["Geral"] = GeneralPage;
+        _pages["Ilha e menus"] = IslandPage;
+        _pages["Dock"] = DockPage;
+        _pages["Barra de tarefas"] = TaskbarPage;
         _pages["Aparência"] = AppearancePage;
         _pages["Avatar"] = AvatarPage;
         _pages["Posição"] = PositionPage;
-        _pages["Barra de tarefas"] = TaskbarPage;
-        _pages["Dock"] = DockPage;
         _pages["Chat IA"] = ChatPage;
         _pages["Atualizações"] = UpdatesPage;
 
-        var glyphs = new Dictionary<string, string>
-        {
-            ["Geral"] = "", ["Aparência"] = "", ["Avatar"] = "",
-            ["Barra de tarefas"] = "\uE737", ["Dock"] = "\uE7C4", ["Posição"] = "", ["Chat IA"] = "", ["Atualizações"] = "",
-        };
-        foreach (var name in _pages.Keys)
-        {
-            var label = Ui.NavLabel(glyphs[name], name);
-            _nav.Items.Add(new ListBoxItem { Tag = name, Content = label });
-        }
-        _nav.SelectionChanged += (_, _) =>
-        {
-            if (_nav.SelectedItem is ListBoxItem { Tag: string page }) ShowPage(page);
-        };
+        NavRow("Geral", "");
+        NavSection("Topo e menus");
+        NavRow("Ilha e menus", "");
+        NavRow("Dock", "");
+        NavRow("Barra de tarefas", "");
+        NavSection("Visual");
+        NavRow("Aparência", "");
+        NavRow("Avatar", "");
+        NavRow("Posição", "");
+        NavSection("Mais");
+        NavRow("Chat IA", "");
+        NavRow("Atualizações", "");
 
         Content = BuildChrome();
-        _nav.SelectedIndex = 0;
+        ShowPage("Geral");
 
         Loaded += (_, _) =>
         {
@@ -107,70 +133,156 @@ public sealed class SettingsWindow : Window
 
     private void Navigate(string page)
     {
-        var item = _nav.Items.OfType<ListBoxItem>().FirstOrDefault(i => (string)i.Tag == page);
-        if (item is not null) _nav.SelectedItem = item;
+        if (_pages.ContainsKey(page)) ShowPage(page);
+    }
+
+    // ---------- Menu lateral ----------
+
+    private void NavSection(string text)
+    {
+        _nav.Children.Add(new TextBlock
+        {
+            Text = text.ToUpperInvariant(),
+            FontSize = 10.5,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Muted,
+            Margin = new Thickness(10, 16, 0, 6),
+        });
+    }
+
+    private void NavRow(string page, string glyph)
+    {
+        var icon = new TextBlock
+        {
+            Text = glyph,
+            FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
+            FontSize = 14,
+            Width = 22,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+        };
+        icon.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+        var label = new TextBlock { Text = page, FontSize = 13.5, VerticalAlignment = VerticalAlignment.Center };
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        content.Children.Add(icon);
+        content.Children.Add(label);
+
+        var row = new Border
+        {
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 1, 0, 1),
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+            Child = content,
+        };
+        row.MouseEnter += (_, _) => { if (_current != page) row.Background = RowHover; };
+        row.MouseLeave += (_, _) => { if (_current != page) row.Background = Brushes.Transparent; };
+        row.MouseLeftButtonUp += (_, _) => ShowPage(page);
+        _navRows[page] = row;
+        _nav.Children.Add(row);
+    }
+
+    private void MarkSelected(string page)
+    {
+        foreach (var (name, row) in _navRows)
+        {
+            row.Background = name == page ? RowSelected : Brushes.Transparent;
+            if (row.Child is StackPanel { Children.Count: 2 } sp && sp.Children[1] is TextBlock t)
+                t.FontWeight = name == page ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+    }
+
+    private static Border Dot(Color color, string tip, Action click)
+    {
+        var dot = new Border
+        {
+            Width = 13,
+            Height = 13,
+            CornerRadius = new CornerRadius(6.5),
+            Background = new SolidColorBrush(color),
+            Margin = new Thickness(0, 0, 8, 0),
+            Cursor = Cursors.Hand,
+            ToolTip = tip,
+        };
+        dot.MouseLeftButtonUp += (_, e) => { e.Handled = true; click(); };
+        return dot;
     }
 
     private FrameworkElement BuildChrome()
     {
-        // Barra de título própria (arrastar para mover, botão fechar).
-        var title = new DockPanel { Height = 46, Margin = new Thickness(16, 0, 8, 0), Background = Brushes.Transparent };
-        title.MouseLeftButtonDown += (_, e) =>
-        {
-            if (e.ButtonState == MouseButtonState.Pressed) DragMove();
-        };
-        var close = new Button { Style = (Style)Application.Current.Resources["IconButton"], Content = "", ToolTip = "Fechar" };
-        close.Click += (_, _) => Close();
-        DockPanel.SetDock(close, Dock.Right);
-        title.Children.Add(close);
-        var icon = new TextBlock
+        // Bolinhas estilo Mac (fechar / minimizar) e arrastar pela parte de cima.
+        var dots = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 18, 0, 6), Background = Brushes.Transparent };
+        dots.Children.Add(Dot(Color.FromRgb(0xFF, 0x5F, 0x57), "Fechar", Close));
+        dots.Children.Add(Dot(Color.FromRgb(0xFE, 0xBC, 0x2E), "Minimizar", () => WindowState = WindowState.Minimized));
+
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 14, 0, 2) };
+        var logo = new TextBlock
         {
             Text = "",
             FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
-            FontSize = 16,
-            Margin = new Thickness(0, 0, 10, 0),
+            FontSize = 15,
             VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
         };
-        icon.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
-        title.Children.Add(icon);
-        title.Children.Add(new TextBlock { Text = "Configurações", FontSize = 15, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        logo.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+        brand.Children.Add(logo);
+        brand.Children.Add(new TextBlock { Text = "Configurações", FontSize = 15, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+
+        var sideStack = new DockPanel { Background = Brushes.Transparent };
+        DockPanel.SetDock(dots, System.Windows.Controls.Dock.Top);
+        sideStack.Children.Add(dots);
+        DockPanel.SetDock(brand, System.Windows.Controls.Dock.Top);
+        sideStack.Children.Add(brand);
+        sideStack.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _nav });
+        sideStack.MouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ButtonState == MouseButtonState.Pressed && e.OriginalSource is not TextBlock) DragMove();
+        };
 
         var sidebar = new Border
         {
-            Width = 190,
-            Background = Ui.Res("SidebarBrush"),
-            CornerRadius = new CornerRadius(0, 0, 0, 14),
-            Child = _nav,
+            Width = 214,
+            Background = SidebarBlack,
+            CornerRadius = new CornerRadius(25, 0, 0, 25),
+            Child = sideStack,
         };
+
+        // Faixa superior do conteúdo também arrasta a janela.
+        var grip = new Border { Height = 22, Background = Brushes.Transparent };
+        grip.MouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+        };
+
+        var right = new DockPanel();
+        DockPanel.SetDock(grip, System.Windows.Controls.Dock.Top);
+        right.Children.Add(grip);
+        _host.Margin = new Thickness(28, 0, 22, 18);
+        right.Children.Add(_host);
 
         var body = new DockPanel();
-        DockPanel.SetDock(title, Dock.Top);
-        body.Children.Add(title);
-        DockPanel.SetDock(sidebar, Dock.Left);
+        DockPanel.SetDock(sidebar, System.Windows.Controls.Dock.Left);
         body.Children.Add(sidebar);
-        _host.Margin = new Thickness(20, 4, 16, 16);
-        body.Children.Add(_host);
+        body.Children.Add(right);
 
-        var glow = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
-        glow.SetResourceReference(Border.BackgroundProperty, "PanelGlowBrush");
-        var layers = new Grid();
-        layers.Children.Add(glow);
-        layers.Children.Add(body);
-        var root = new Border
+        return new Border
         {
-            CornerRadius = new CornerRadius(22),
+            CornerRadius = new CornerRadius(26),
+            Background = WindowBlack,
             BorderThickness = new Thickness(1),
-            Child = layers,
-            Margin = new Thickness(10), // espaço para a sombra
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 2, Opacity = 0.45 },
+            BorderBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF))),
+            Child = body,
+            Margin = new Thickness(14), // espaço para a sombra
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 26, ShadowDepth = 4, Opacity = 0.55 },
         };
-        root.SetResourceReference(Border.BackgroundProperty, "WindowBrush");
-        root.SetResourceReference(Border.BorderBrushProperty, "BorderBrush");
-        return root;
     }
 
     private void ShowPage(string page)
     {
+        if (_current == page) return;
+        _current = page;
+        MarkSelected(page);
         if (!_built.TryGetValue(page, out var view))
         {
             view = _pages[page]();
@@ -182,56 +294,71 @@ public sealed class SettingsWindow : Window
 
     private static FrameworkElement Page(string title, params UIElement[] content)
     {
-        var all = new List<UIElement> { Ui.Title(title) };
+        var header = new StackPanel { Margin = new Thickness(0, 0, 0, 18) };
+        header.Children.Add(new TextBlock { Text = title, FontSize = 26, FontWeight = FontWeights.Bold });
+        if (Subtitles.TryGetValue(title, out var sub))
+            header.Children.Add(new TextBlock { Text = sub, FontSize = 13, Foreground = Muted, Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
+        var all = new List<UIElement> { header };
         all.AddRange(content);
         return new UserControl { Content = Ui.Scroll(Ui.Stack(all.ToArray())) };
+    }
+
+    /// <summary>Linha de opção estilo Mac: título e explicação à esquerda, interruptor à direita.</summary>
+    private static FrameworkElement ToggleRow(string title, string caption, bool value, Action<bool> changed, bool last = false)
+    {
+        var toggle = new CheckBox { IsChecked = value, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        toggle.Click += (_, _) => changed(toggle.IsChecked == true);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium, TextWrapping = TextWrapping.Wrap });
+        if (caption.Length > 0)
+            text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, Margin = new Thickness(0, 2, 0, 0), TextWrapping = TextWrapping.Wrap });
+        var row = new DockPanel { Margin = new Thickness(0, 6, 0, 6) };
+        DockPanel.SetDock(toggle, System.Windows.Controls.Dock.Right);
+        row.Children.Add(toggle);
+        row.Children.Add(text);
+        if (last) return row;
+        var wrap = new StackPanel { Margin = new Thickness(0) };
+        wrap.Children.Add(row);
+        wrap.Children.Add(new Border { Height = 1, Background = Frozen(new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF))), Margin = new Thickness(0, 4, 0, 4) });
+        return wrap;
     }
 
     // ---------- Páginas ----------
 
     private FrameworkElement GeneralPage()
     {
-        var startup = Ui.Check("Iniciar o Assistente junto com o Windows", StartupManager.IsEnabled);
-        startup.FontSize = 14;
-        startup.Checked += (_, _) => StartupManager.SetEnabled(true);
-        startup.Unchecked += (_, _) => StartupManager.SetEnabled(false);
+        var startup = ToggleRow("Iniciar junto com o Windows", "O Assistente abre sozinho assim que você entra no Windows.",
+            StartupManager.IsEnabled, v => StartupManager.SetEnabled(v), last: true);
 
         var delay = SliderRow("Tempo para recolher depois que o mouse sai", 150, 2000, _settings.CloseDelayMs,
             v => $"{v / 1000:0.0} s", v => _settings.CloseDelayMs = (int)v);
 
-        var music = Ui.Check("Widget de música à direita do avatar (quando algo estiver tocando)", _settings.MusicWidget);
-        music.FontSize = 14;
-        music.Margin = new Thickness(0, 0, 0, 10);
-        music.Click += (_, _) => { _settings.MusicWidget = music.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
-        var avatarHide = Ui.Check("Deixar o avatar escondido (aparece ao levar o mouse até o topo, perto dele)", _settings.AvatarAutoHide);
-        avatarHide.FontSize = 14;
-        avatarHide.Margin = new Thickness(0, 0, 0, 10);
-        avatarHide.Click += (_, _) => { _settings.AvatarAutoHide = avatarHide.IsChecked == true; _settings.Save(); };
-        var time = Ui.Check("Widget de timer e cronômetro à esquerda do avatar", _settings.TimeWidget);
-        time.FontSize = 14;
-        time.Click += (_, _) => { _settings.TimeWidget = time.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
-
-        var menuBar = Ui.Check("Ilha no topo (estilo Dynamic Island) com o assistente, relógio, CPU, bateria, música e timer", _settings.MenuBarEnabled);
-        menuBar.FontSize = 14;
-        menuBar.Margin = new Thickness(0, 0, 0, 10);
-        menuBar.Click += (_, _) => { _settings.MenuBarEnabled = menuBar.IsChecked == true; _settings.Save(); MenuBar.MenuBarWindow.Apply(_settings); };
-
-        var corners = Ui.Check("Menus de canto: borda esquerda (seus apps, pastas e acessos remotos, só na área de trabalho) e canto de baixo à direita (Wi‑Fi, volume, notificações e atalhos do Windows)", _settings.CornerMenus);
-        corners.FontSize = 14;
-        corners.Margin = new Thickness(0, 0, 0, 10);
-        corners.Click += (_, _) => { _settings.CornerMenus = corners.IsChecked == true; _settings.Save(); Corners.CornerMenu.Apply(_settings); };
-
-        var radial = Ui.Check("Menu em círculo: segure um arquivo no Explorer/área de trabalho e clique com o botão direito (zipar, extrair, converter imagem…)", _settings.RadialMenu);
-        radial.FontSize = 14;
-        radial.Margin = new Thickness(0, 0, 0, 10);
-        radial.Click += (_, _) => { _settings.RadialMenu = radial.IsChecked == true; _settings.Save(); Radial.RadialHook.Apply(_settings.RadialMenu); };
+        var avatarHide = ToggleRow("Avatar escondido", "Aparece quando você leva o mouse até o topo, perto dele.",
+            _settings.AvatarAutoHide, v => { _settings.AvatarAutoHide = v; _settings.Save(); });
+        var music = ToggleRow("Widget de música", "Ao lado do avatar quando algo estiver tocando.",
+            _settings.MusicWidget, v => { _settings.MusicWidget = v; _settings.Save(); Widgets.WidgetManager.Refresh(); });
+        var time = ToggleRow("Widget de timer e cronômetro", "Ao lado do avatar, para usar sem abrir o Assistente.",
+            _settings.TimeWidget, v => { _settings.TimeWidget = v; _settings.Save(); Widgets.WidgetManager.Refresh(); }, last: true);
 
         return Page("Geral",
-            Ui.Card("Inicialização", "", startup,
-                Ui.Caption("Quando ligado, o Assistente abre sozinho assim que você entra no Windows.")),
-            Ui.Card("Avatar e mini widgets", "\uE8A9", menuBar, corners, radial, avatarHide, music, time,
-                Ui.Caption("Aparecem ao lado do avatar com o painel fechado, para controlar a música e o timer sem abrir o Assistente.")),
-            Ui.Card("Comportamento", "", delay));
+            Ui.Card("Inicialização", "", startup),
+            Ui.Card("Comportamento", "", delay),
+            Ui.Card("Avatar e mini widgets", "", avatarHide, music, time));
+    }
+
+    private FrameworkElement IslandPage()
+    {
+        var island = ToggleRow("Ilha no topo", "Estilo Dynamic Island: assistente, relógio, CPU, bateria, música, timer e bandeja de arquivos.",
+            _settings.MenuBarEnabled, v => { _settings.MenuBarEnabled = v; _settings.Save(); MenuBar.MenuBarWindow.Apply(_settings); }, last: true);
+        var corners = ToggleRow("Menus de canto", "Borda esquerda com seus apps, pastas e acessos remotos (só na área de trabalho) e canto de baixo à direita com Wi‑Fi, volume e atalhos do Windows.",
+            _settings.CornerMenus, v => { _settings.CornerMenus = v; _settings.Save(); Corners.CornerMenu.Apply(_settings); }, last: true);
+        var radial = ToggleRow("Menu em círculo", "Segure um arquivo no Explorer ou na área de trabalho e clique com o botão direito: zipar, extrair, converter, remover fundo…",
+            _settings.RadialMenu, v => { _settings.RadialMenu = v; _settings.Save(); Radial.RadialHook.Apply(v); }, last: true);
+
+        return Page("Ilha e menus",
+            Ui.Card("Topo da tela", "", island),
+            Ui.Card("Cantos da tela", "", corners),
+            Ui.Card("Arquivos", "", radial));
     }
 
     private FrameworkElement AppearancePage()
@@ -714,7 +841,7 @@ public sealed class SettingsWindow : Window
         slider.KeyUp += (_, _) => Commit();
 
         var row = new DockPanel();
-        DockPanel.SetDock(valueText, Dock.Right);
+        DockPanel.SetDock(valueText, System.Windows.Controls.Dock.Right);
         row.Children.Add(valueText);
         row.Children.Add(slider);
         return Ui.Field(label, row);

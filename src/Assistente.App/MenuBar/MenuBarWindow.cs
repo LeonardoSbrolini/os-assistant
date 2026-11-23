@@ -1081,31 +1081,114 @@ public sealed class MenuBarWindow : Window
         if (_popover.IsOpen) _popover.Reflow(); else _popover.Open();
     }
 
-    // Sistema: CPU/memória + rede + bateria
+    // Sistema: quatro cartões pequenos lado a lado (CPU, memória, rede, bateria ou disco).
     private (UIElement, Action?) SystemView()
     {
-        var (cpu, cpuUpdate) = CpuPopover();
-        var (net, netUpdate) = NetworkPopover();
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.3, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var left = Card(cpu);
-        var rightStack = new StackPanel();
-        rightStack.Children.Add(net);
-        Action? update = cpuUpdate;
-        update += netUpdate;
-        if (_batteryItem.Visibility == Visibility.Visible)
+        var m = MetricsService.Instance;
+        var grid = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Height = 92 };
+
+        (Border Card, TextBlock Value, TextBlock Sub) Stat(string glyph, string name, UIElement visual)
         {
-            var (bat, batUpdate) = BatteryPopover();
-            rightStack.Children.Add(bat);
-            update += batUpdate;
+            var head = new StackPanel { Orientation = Orientation.Horizontal };
+            var g = new TextBlock
+            {
+                Text = glyph,
+                FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
+                FontSize = 11,
+                Foreground = Brushes.White,
+                Opacity = 0.6,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0),
+            };
+            head.Children.Add(g);
+            var label = Text(name, 11);
+            label.Opacity = 0.6;
+            head.Children.Add(label);
+            var value = new TextBlock { FontSize = 17, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, Margin = new Thickness(0, 3, 0, 0) };
+            var sub = new TextBlock { FontSize = 10.5, Foreground = Brushes.White, Opacity = 0.5, TextTrimming = TextTrimming.CharacterEllipsis };
+            var stack = new StackPanel();
+            stack.Children.Add(head);
+            stack.Children.Add(value);
+            stack.Children.Add(visual);
+            stack.Children.Add(sub);
+            var card = Card(stack);
+            card.Padding = new Thickness(11, 9, 11, 8);
+            card.CornerRadius = new CornerRadius(16);
+            card.Margin = new Thickness(0, 0, 6, 0);
+            return (card, value, sub);
         }
-        var right = Card(rightStack);
-        right.Margin = new Thickness(0);
-        Grid.SetColumn(right, 1);
-        grid.Children.Add(left);
-        grid.Children.Add(right);
-        return (grid, update);
+
+        (Grid Bar, Action<double> Set) MiniBar(Color color)
+        {
+            var track = new Grid { Height = 5, Margin = new Thickness(0, 7, 0, 6) };
+            track.Children.Add(new Border { CornerRadius = new CornerRadius(2.5), Background = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)) });
+            var fill = new Border { CornerRadius = new CornerRadius(2.5), Background = new SolidColorBrush(color), HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
+            track.Children.Add(fill);
+            var current = 0.0;
+            void Apply() => fill.Width = Math.Clamp(current, 0, 100) / 100 * Math.Max(0, track.ActualWidth);
+            track.SizeChanged += (_, _) => Apply();
+            return (track, pct => { current = pct; Apply(); });
+        }
+
+        var cpuGraph = new LineGraph { Height = 18, ShowGrid = false, Margin = new Thickness(0, 2, 0, 1) };
+        var cpu = Stat("\uE950", "CPU", cpuGraph);
+        var (ramBar, setRam) = MiniBar(Color.FromRgb(0xBF, 0x7B, 0xFF));
+        var ram = Stat("\uE964", "Memória", ramBar);
+        var netGraph = new LineGraph { Height = 18, ShowGrid = false, Maximum = null, Margin = new Thickness(0, 2, 0, 1) };
+        var net = Stat("\uE774", "Rede", netGraph);
+
+        var hasBattery = _batteryItem.Visibility == Visibility.Visible;
+        var (lastBar, setLast) = MiniBar(hasBattery ? Color.FromRgb(0x4C, 0xC3, 0x8A) : Color.FromRgb(0x4F, 0x8C, 0xFF));
+        var last = Stat(hasBattery ? "\uE83F" : "\uEDA2", hasBattery ? "Bateria" : "Disco C:", lastBar);
+        last.Card.Margin = new Thickness(0);
+
+        grid.Children.Add(cpu.Card);
+        grid.Children.Add(ram.Card);
+        grid.Children.Add(net.Card);
+        grid.Children.Add(last.Card);
+        grid.Width = 4 * 150 + 18;
+
+        var cores = Environment.ProcessorCount;
+        return (grid, () =>
+        {
+            cpuGraph.SetValues(m.Cpu.Values);
+            cpu.Value.Text = $"{m.Cpu.Last:0}%";
+            cpu.Sub.Text = $"{cores} núcleos";
+
+            setRam(m.LastMemory.UsedPercent);
+            ram.Value.Text = $"{m.LastMemory.UsedPercent:0}%";
+            ram.Sub.Text = $"{ByteSize.Format(m.LastMemory.UsedBytes, PtBr)} de {ByteSize.Format(m.LastMemory.TotalBytes, PtBr)}";
+
+            netGraph.SetValues(m.NetReceive.Values, m.NetSend.Values);
+            net.Value.Text = "↓ " + Speed(m.NetReceive.Last);
+            net.Sub.Text = "↑ " + Speed(m.NetSend.Last);
+
+            if (hasBattery)
+            {
+                var p = Forms.SystemInformation.PowerStatus;
+                var pct = p.BatteryLifePercent * 100;
+                setLast(pct);
+                last.Value.Text = $"{pct:0}%";
+                last.Sub.Text = p.PowerLineStatus == Forms.PowerLineStatus.Online ? "Carregando"
+                    : p.BatteryLifeRemaining > 0 ? $"~{p.BatteryLifeRemaining / 3600}h {p.BatteryLifeRemaining % 3600 / 60}min" : "Na bateria";
+            }
+            else
+            {
+                try
+                {
+                    var d = new System.IO.DriveInfo("C");
+                    var used = d.TotalSize - d.TotalFreeSpace;
+                    var pct = d.TotalSize > 0 ? used * 100.0 / d.TotalSize : 0;
+                    setLast(pct);
+                    last.Value.Text = $"{pct:0}%";
+                    last.Sub.Text = $"{ByteSize.Format(d.TotalFreeSpace, PtBr)} livres";
+                }
+                catch (Exception)
+                {
+                    last.Value.Text = "—";
+                }
+            }
+        });
     }
 
     // ---------- Peças ----------

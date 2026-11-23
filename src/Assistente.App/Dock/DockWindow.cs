@@ -30,8 +30,15 @@ public sealed class DockWindow : Window
     private const double EarSize = 14;
     private readonly ScaleTransform _unfold = new(1, 1);
     private int _revealToken;
-    private readonly System.Windows.Shapes.Path _earLeft = Ears.Make(Ears.Kind.BottomLeft, EarSize, Ears.Black);
-    private readonly System.Windows.Shapes.Path _earRight = Ears.Make(Ears.Kind.BottomRight, EarSize, Ears.Black);
+    /// <summary>Uma única forma preta (prateleira + as duas orelhas), sem emendas.</summary>
+    private readonly System.Windows.Shapes.Path _shape = new()
+    {
+        Fill = Ears.Black,
+        IsHitTestVisible = false,
+        VerticalAlignment = VerticalAlignment.Bottom,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        SnapsToDevicePixels = true,
+    };
     private const uint AppBarCallback = 0x0400 + 0x1D0; // WM_USER + n
 
     private readonly AppSettings _settings;
@@ -82,13 +89,7 @@ public sealed class DockWindow : Window
         _shelf.VerticalAlignment = VerticalAlignment.Bottom;
         _shelf.HorizontalAlignment = HorizontalAlignment.Center;
         _shelf.Margin = new Thickness(0, 0, 0, BottomMargin);
-        _shelf.Background = Ears.Black;
-        foreach (var ear in new[] { _earLeft, _earRight })
-        {
-            ear.VerticalAlignment = VerticalAlignment.Bottom;
-            ear.HorizontalAlignment = HorizontalAlignment.Center;
-            ear.RenderTransform = new TranslateTransform();
-        }
+        _shelf.Background = Brushes.Transparent;
 
         // Quase transparente: a faixa inteira recebe o mouse (para o zoom).
         _items.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
@@ -118,8 +119,7 @@ public sealed class DockWindow : Window
         };
         _content.RenderTransformOrigin = new Point(0.5, 1);
         _content.RenderTransform = new TransformGroup { Children = { _unfold, _slide } };
-        _content.Children.Add(_earLeft);
-        _content.Children.Add(_earRight);
+        _content.Children.Add(_shape);
         _content.Children.Add(_shelf);
         _content.Children.Add(_items);
         Content = _content;
@@ -549,8 +549,33 @@ public sealed class DockWindow : Window
             x += slot;
         }
         _shelf.Width = Math.Max(0, total + 2 * ShelfPad);
-        ((TranslateTransform)_earLeft.RenderTransform).X = -(_shelf.Width / 2 + EarSize / 2);
-        ((TranslateTransform)_earRight.RenderTransform).X = _shelf.Width / 2 + EarSize / 2;
+        UpdateShape();
+    }
+
+    /// <summary>
+    /// Desenha prateleira e orelhas como um só caminho: canto côncavo à esquerda, cantos de cima
+    /// arredondados e canto côncavo à direita, encostando na borda de baixo da tela.
+    /// </summary>
+    private void UpdateShape()
+    {
+        var w = _shelf.Width;
+        var h = _shelf.Height;
+        if (double.IsNaN(w) || double.IsNaN(h) || w <= 0 || h <= 0) return;
+        const double e = EarSize;
+        var r = Math.Min(22, Math.Min(w / 2, h - e));
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+        string F(double v) => v.ToString("0.##", ic);
+        var data =
+            $"M0,{F(h)} A{F(e)},{F(e)} 0 0 0 {F(e)},{F(h - e)} " +
+            $"L{F(e)},{F(r)} A{F(r)},{F(r)} 0 0 1 {F(e + r)},0 " +
+            $"L{F(e + w - r)},0 A{F(r)},{F(r)} 0 0 1 {F(e + w)},{F(r)} " +
+            $"L{F(e + w)},{F(h - e)} A{F(e)},{F(e)} 0 0 0 {F(2 * e + w)},{F(h)} Z";
+        var g = Geometry.Parse(data);
+        g.Freeze();
+        _shape.Data = g;
+        _shape.Width = w + 2 * e;
+        _shape.Height = h;
+        _shape.Margin = new Thickness(0, 0, 0, BottomMargin);
     }
 
     // ---------- Mostrar / esconder ----------

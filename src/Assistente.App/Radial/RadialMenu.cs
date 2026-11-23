@@ -29,7 +29,15 @@ internal sealed class RadialMenu : Window
     private const double Inner = 46;
     private const double Size = Outer * 2 + 16;
 
-    private sealed record Slice(string Glyph, string Label, Func<string[], string?> Run);
+    /// <summary>Uma ação em andamento: para onde salvar e o que foi criado.</summary>
+    private sealed class Job
+    {
+        public required DropTarget Target { get; init; }
+        public List<string> Created { get; } = new();
+        public string Out(string source) => Target.FolderFor(source);
+    }
+
+    private sealed record Slice(string Glyph, string Label, Func<string[], Job, string?> Run);
 
     private static RadialMenu? _current;
     public static bool IsOpen => _current is { IsVisible: true };
@@ -39,14 +47,16 @@ internal sealed class RadialMenu : Window
     private readonly ScaleTransform _scale = new(1, 1);
     private Path? _hot;
     private bool _dropped;
+    private DropTarget? _target;
 
     private static readonly Slice[] Actions =
     {
         new("", "Zipar", Zip),
         new("", "Extrair", Extract),
-        new("", "Para PNG", files => ConvertImages(files, "png")),
-        new("", "Para JPG", files => ConvertImages(files, "jpg")),
+        new("", "Para PNG", (f, j) => ConvertImages(f, j, "png")),
+        new("", "Para JPG", (f, j) => ConvertImages(f, j, "jpg")),
         new("", "Reduzir 50%", ResizeImages),
+        new("\uE91B", "Remover fundo", RemoveBackground),
         new("", "Copiar caminho", CopyPaths),
         new("", "Bandeja", AddToTray),
     };
@@ -54,7 +64,7 @@ internal sealed class RadialMenu : Window
     public static void ShowAt(int screenX, int screenY)
     {
         _current?.Close();
-        _current = new RadialMenu();
+        _current = new RadialMenu { _target = DropTarget.Capture(screenX, screenY) };
         var dpi = VisualTreeHelper.GetDpi(Application.Current.MainWindow ?? _current);
         _current.Left = screenX / dpi.DpiScaleX - Size / 2;
         _current.Top = screenY / dpi.DpiScaleY - Size / 2;
@@ -201,12 +211,14 @@ internal sealed class RadialMenu : Window
         if (slice is null || files is null || files.Length == 0) return;
         e.Effects = DragDropEffects.Copy;
         var name = slice.Label;
+        var job = new Job { Target = _target ?? DropTarget.Capture(-1, -1) };
+        var ui = Dispatcher;
         Task.Run(() =>
         {
             string? result;
             try
             {
-                result = slice.Run(files);
+                result = slice.Run(files, job);
             }
             catch (Exception ex)
             {
@@ -215,6 +227,7 @@ internal sealed class RadialMenu : Window
             Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (!string.IsNullOrEmpty(result)) TrayIcon.Notify(name, result);
+                job.Target.Place(job.Created, ui);
             }));
         });
     }
@@ -244,22 +257,10 @@ internal sealed class RadialMenu : Window
         }
     }
 
-    private static void Reveal(string path)
-    {
-        try
-        {
-            Process.Start("explorer.exe", $"/select,\"{path}\"");
-        }
-        catch (Exception)
-        {
-            // Melhor esforço.
-        }
-    }
-
-    private static string? Zip(string[] files)
+    private static string? Zip(string[] files, Job job)
     {
         var first = files[0].TrimEnd('\\');
-        var dir = System.IO.Path.GetDirectoryName(first) ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        var dir = job.Out(first);
         var baseName = files.Length == 1 ? System.IO.Path.GetFileNameWithoutExtension(first) : "Arquivos";
         var zip = Unique(System.IO.Path.Combine(dir, baseName + ".zip"));
         if (files.Length == 1 && Directory.Exists(first))
@@ -280,22 +281,22 @@ internal sealed class RadialMenu : Window
                 }
             }
         }
-        Reveal(zip);
+        job.Created.Add(zip);
         return "Criado " + System.IO.Path.GetFileName(zip);
     }
 
-    private static string? Extract(string[] files)
+    private static string? Extract(string[] files, Job job)
     {
         var zips = files.Where(f => f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && File.Exists(f)).ToList();
         if (zips.Count == 0) return "Extrair funciona com arquivos .zip.";
         string? last = null;
         foreach (var z in zips)
         {
-            var target = Unique(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(z) ?? "", System.IO.Path.GetFileNameWithoutExtension(z)));
+            var target = Unique(System.IO.Path.Combine(job.Out(z), System.IO.Path.GetFileNameWithoutExtension(z)));
             ZipFile.ExtractToDirectory(z, target);
             last = target;
+            job.Created.Add(target);
         }
-        if (last is not null) Reveal(last);
         return zips.Count == 1 ? "Extraído em " + System.IO.Path.GetFileName(last) : $"{zips.Count} arquivos extraídos";
     }
 
@@ -334,7 +335,7 @@ internal sealed class RadialMenu : Window
         encoder.Save(output);
     }
 
-    private static string? ConvertImages(string[] files, string format)
+    private static string? ConvertImages(string[] files, Job job, string format)
     {
         var images = Images(files).ToList();
         if (images.Count == 0) return "Solte uma imagem (PNG, JPG, BMP, GIF, TIFF, WebP…).";
@@ -342,16 +343,16 @@ internal sealed class RadialMenu : Window
         var done = 0;
         foreach (var img in images)
         {
-            var target = Unique(System.IO.Path.ChangeExtension(img, format));
+            var target = Unique(System.IO.Path.Combine(job.Out(img), System.IO.Path.GetFileNameWithoutExtension(img) + "." + format));
             RunSta(() => Save(Load(img), target, format));
             last = target;
+            job.Created.Add(target);
             done++;
         }
-        if (last is not null) Reveal(last);
         return done == 1 ? "Salvo " + System.IO.Path.GetFileName(last) : $"{done} imagens convertidas";
     }
 
-    private static string? ResizeImages(string[] files)
+    private static string? ResizeImages(string[] files, Job job)
     {
         var images = Images(files).ToList();
         if (images.Count == 0) return "Solte uma imagem para reduzir.";
@@ -360,7 +361,7 @@ internal sealed class RadialMenu : Window
         {
             var ext = System.IO.Path.GetExtension(img).ToLowerInvariant();
             var format = ext is ".jpg" or ".jpeg" ? "jpg" : "png";
-            var target = Unique(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(img) ?? "",
+            var target = Unique(System.IO.Path.Combine(job.Out(img),
                 System.IO.Path.GetFileNameWithoutExtension(img) + " (50%)." + format));
             RunSta(() =>
             {
@@ -370,19 +371,19 @@ internal sealed class RadialMenu : Window
                 Save(small, target, format);
             });
             last = target;
+            job.Created.Add(target);
         }
-        if (last is not null) Reveal(last);
         return images.Count == 1 ? "Salvo " + System.IO.Path.GetFileName(last) : $"{images.Count} imagens reduzidas";
     }
 
-    private static string? CopyPaths(string[] files)
+    private static string? CopyPaths(string[] files, Job job)
     {
         var text = string.Join(Environment.NewLine, files);
         Application.Current.Dispatcher.Invoke(() => Clipboard.SetText(text));
         return files.Length == 1 ? "Caminho copiado" : $"{files.Length} caminhos copiados";
     }
 
-    private static string? AddToTray(string[] files)
+    private static string? AddToTray(string[] files, Job job)
     {
         Application.Current.Dispatcher.Invoke(() =>
         {
@@ -393,6 +394,39 @@ internal sealed class RadialMenu : Window
             settings.Save();
         });
         return files.Length == 1 ? "Guardado na bandeja da ilha" : $"{files.Length} itens na bandeja da ilha";
+    }
+
+    /// <summary>
+    /// Remove o fundo: descobre a cor do fundo pelas bordas da imagem, "pinta" a partir das bordas
+    /// tudo que for parecido com ela e deixa transparente, suavizando o contorno.
+    /// Funciona melhor com fundo liso (branco, verde, uma cor só).
+    /// </summary>
+    private static string? RemoveBackground(string[] files, Job job)
+    {
+        var images = Images(files).ToList();
+        if (images.Count == 0) return "Solte uma imagem para remover o fundo.";
+        string? last = null;
+        var busy = false;
+        foreach (var img in images)
+        {
+            var target = Unique(System.IO.Path.Combine(job.Out(img), System.IO.Path.GetFileNameWithoutExtension(img) + " (sem fundo).png"));
+            RunSta(() =>
+            {
+                var source = new FormatConvertedBitmap(Load(img), PixelFormats.Bgra32, null, 0);
+                var w = source.PixelWidth;
+                var h = source.PixelHeight;
+                var px = new byte[w * h * 4];
+                source.CopyPixels(px, w * 4, 0);
+                busy |= BackgroundRemover.Apply(px, w, h);
+                var result = BitmapSource.Create(w, h, source.DpiX, source.DpiY, PixelFormats.Bgra32, null, px, w * 4);
+                result.Freeze();
+                Save(result, target, "png");
+            });
+            last = target;
+            job.Created.Add(target);
+        }
+        var msg = images.Count == 1 ? "Salvo " + System.IO.Path.GetFileName(last) : $"{images.Count} imagens sem fundo";
+        return busy ? msg + ". O fundo tinha muitas cores, então confira o resultado." : msg;
     }
 
     /// <summary>Imagens WPF precisam de uma thread STA.</summary>
