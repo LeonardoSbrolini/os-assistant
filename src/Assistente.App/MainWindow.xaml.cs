@@ -59,6 +59,7 @@ public partial class MainWindow : Window
         _settings = settings;
         Current = this;
         InitializeComponent();
+        BuildChromeButtons();
 
         _collapseTimer.Tick += (_, _) => TryCollapse();
         SourceInitialized += (_, _) =>
@@ -236,6 +237,36 @@ public partial class MainWindow : Window
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e) => SettingsWindow.Open();
 
+    /// <summary>Monta os botões estilo Mac e o item de configurações do rodapé.</summary>
+    private void BuildChromeButtons()
+    {
+        SettingsRow.Child = Ui.NavLabel("\uE713", "Configurações");
+        var hover = new SolidColorBrush(Colors.Transparent);
+        SettingsRow.Background = hover;
+        SettingsRow.MouseEnter += (_, _) => hover.BeginAnimation(SolidColorBrush.ColorProperty, Anim.ColorTo(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF), 120));
+        SettingsRow.MouseLeave += (_, _) => hover.BeginAnimation(SolidColorBrush.ColorProperty, Anim.ColorTo(Colors.Transparent, 200));
+
+        // Como no Mac: os símbolos dentro das bolinhas aparecem ao passar o mouse.
+        WindowDots.MouseEnter += (_, _) =>
+        {
+            CloseGlyph.BeginAnimation(OpacityProperty, Anim.To(1, 120));
+            PinGlyph.BeginAnimation(OpacityProperty, Anim.To(1, 120));
+        };
+        WindowDots.MouseLeave += (_, _) =>
+        {
+            CloseGlyph.BeginAnimation(OpacityProperty, Anim.To(0, 180));
+            PinGlyph.BeginAnimation(OpacityProperty, Anim.To(0, 180));
+        };
+        foreach (var dot in new[] { CloseDot, PinDot })
+        {
+            var scale = new ScaleTransform(1, 1);
+            dot.RenderTransformOrigin = new Point(0.5, 0.5);
+            dot.RenderTransform = scale;
+            dot.MouseEnter += (_, _) => { scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim.To(1.15, 140, Anim.Back)); scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.To(1.15, 140, Anim.Back)); };
+            dot.MouseLeave += (_, _) => { scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim.To(1, 160)); scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.To(1, 160)); };
+        }
+    }
+
     private void SelectTool(string toolName) => SelectGroup(ToolRegistry.GroupOf(toolName), toolName);
 
     // ---------- Tempo na alça ----------
@@ -337,11 +368,9 @@ public partial class MainWindow : Window
     private void SetPinned(bool pinned)
     {
         _pinned = pinned;
-        PinButton.Content = pinned ? "" : "";
-        PinButton.ToolTip = pinned ? "Desafixar" : "Fixar aberto";
-        PinButton.Foreground = pinned
-            ? (Brush)FindResource("AccentBrush")
-            : (Brush)FindResource("MutedBrush");
+        PinDot.Background = new SolidColorBrush(pinned ? Color.FromRgb(0x28, 0xC8, 0x40) : Color.FromRgb(0x4A, 0x4D, 0x57));
+        PinDot.ToolTip = pinned ? "Desafixar" : "Fixar aberto";
+        PinGlyph.Text = pinned ? "" : "";
     }
 
     // ---------- Posicionamento ----------
@@ -349,25 +378,27 @@ public partial class MainWindow : Window
     /// <summary>Ajusta cantos arredondados conforme a borda da tela.</summary>
     public void ApplyEdge()
     {
+        // Painel flutuante estilo Mac: cantos arredondados nos quatro lados e um respiro da borda
+        // da tela (a margem extra embaixo é o espaço da sombra).
+        ExpandedPanel.CornerRadius = new CornerRadius(16);
+        ExpandedPanel.BorderThickness = new Thickness(1);
+        Sidebar.CornerRadius = new CornerRadius(15, 0, 0, 15);
+        ExpandedPanel.Margin = _settings.Edge switch
+        {
+            DockEdge.Top => new Thickness(16, 8, 16, 24),
+            DockEdge.Left => new Thickness(8, 12, 22, 24),
+            _ => new Thickness(22, 12, 8, 24),
+        };
         switch (_settings.Edge)
         {
             case DockEdge.Top:
-                Sidebar.CornerRadius = new CornerRadius(0, 0, 0, 12);
                 CollapsedHandle.CornerRadius = new CornerRadius(0, 0, 8, 8);
-                ExpandedPanel.CornerRadius = new CornerRadius(0, 0, 12, 12);
-                ExpandedPanel.BorderThickness = new Thickness(1, 0, 1, 1);
                 break;
             case DockEdge.Left:
-                Sidebar.CornerRadius = new CornerRadius(0);
                 CollapsedHandle.CornerRadius = new CornerRadius(0, 8, 8, 0);
-                ExpandedPanel.CornerRadius = new CornerRadius(0, 12, 12, 0);
-                ExpandedPanel.BorderThickness = new Thickness(0, 1, 1, 1);
                 break;
             default:
-                Sidebar.CornerRadius = new CornerRadius(12, 0, 0, 12);
                 CollapsedHandle.CornerRadius = new CornerRadius(8, 0, 0, 8);
-                ExpandedPanel.CornerRadius = new CornerRadius(12, 0, 0, 12);
-                ExpandedPanel.BorderThickness = new Thickness(1, 1, 0, 1);
                 break;
         }
         UpdateHandle();
@@ -386,6 +417,10 @@ public partial class MainWindow : Window
             var size = Math.Clamp(_settings.PanelSize, 0.3, 0.5);
             width = Math.Min(area.Width, Math.Max(MinPanelWidth, area.Width * size));
             height = Math.Min(area.Height, Math.Max(MinPanelHeight, area.Height * size));
+            // Espaço em volta do painel flutuante (respiro da borda + sombra).
+            var m = ExpandedPanel.Margin;
+            width = Math.Min(area.Width, width + m.Left + m.Right);
+            height = Math.Min(area.Height, height + m.Top + m.Bottom);
         }
         else
         {

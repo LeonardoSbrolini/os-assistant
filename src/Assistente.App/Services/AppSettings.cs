@@ -21,7 +21,7 @@ public sealed class AppSettings
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private const int CurrentVersion = 4;
+    private const int CurrentVersion = 5;
 
     /// <summary>Versão do arquivo, para migrar preferências antigas.</summary>
     public int Version { get; set; }
@@ -111,7 +111,7 @@ public sealed class AppSettings
     public bool DockAutoHide { get; set; }
 
     /// <summary>"janela" = some quando uma janela encosta no dock (como no Mac); "sempre"; "nunca".</summary>
-    public string DockHideMode { get; set; } = "janela";
+    public string DockHideMode { get; set; } = "sempre";
 
     /// <summary>Esconde de vez a barra de tarefas do Windows enquanto o dock estiver ligado.</summary>
     public bool DockHideTaskbar { get; set; }
@@ -159,10 +159,15 @@ public sealed class AppSettings
                         settings.DockHideMode = "janela";
                         settings.DockShowRunning = true;
                     }
-                    // v4: nunca mais esconder a barra do Windows (ela é deixada com cara de Mac).
-                    settings.DockHideTaskbar = false;
-                    settings.DockEnabled = false;
-                    settings.ApplyMacTaskbarOnStart = true;
+                    if (settings.Version < 4)
+                    {
+                        // v4: nunca mais esconder a barra do Windows (ela é deixada com cara de Mac).
+                        settings.DockHideTaskbar = false;
+                        settings.DockEnabled = false;
+                        settings.ApplyMacTaskbarOnStart = true;
+                    }
+                    // v5: o dock só aparece ao levar o mouse até a parte de baixo da tela.
+                    settings.DockHideMode = "sempre";
                     settings.Version = CurrentVersion;
                     settings.Save();
                 }

@@ -396,7 +396,11 @@ public sealed class DockWindow : Window
         Left = (SystemParameters.PrimaryScreenWidth - width) / 2;
         Top = bottom - height;
         if (HideMode == "nunca") Reveal(true, animate: false);
+        else if (!_placedOnce) Reveal(false, animate: false); // começa escondido: só aparece com o mouse embaixo
+        _placedOnce = true;
     }
+
+    private bool _placedOnce;
 
     private double HiddenOffset => IconSize + DockItem.DotSpace + 2 * ShelfPad + BottomMargin + 6;
 

@@ -167,30 +167,17 @@ public sealed class MenuBarWindow : Window
     private DateTime _lastBarChange = DateTime.MinValue;
 
     /// <summary>
-    /// A barra reserva a faixa dela no topo (como a barra do Windows faz embaixo): os apps
-    /// maximizados ficam logo abaixo e nunca ficam por baixo dela.
+    /// A barra fica no topo, por cima de tudo, mas só aparece na área de trabalho (sem nenhum
+    /// app na frente). Não reserva espaço: com um app aberto ela some e o app usa a tela toda.
     /// </summary>
     private void Place()
     {
         if (_hwnd == IntPtr.Zero) _hwnd = new WindowInteropHelper(this).EnsureHandle();
-        var dpi = VisualTreeHelper.GetDpi(this);
-        var px = (int)Math.Ceiling(BarHeight * dpi.DpiScaleY);
-        var rect = Native.RegisterTopBar(_hwnd, px, AppBarCallback, _appBar);
-        _appBar = rect is not null;
-        _lastBarChange = DateTime.Now;
-        if (rect is { } r)
-        {
-            Left = r.Left / dpi.DpiScaleX;
-            Top = r.Top / dpi.DpiScaleY;
-            Width = r.Width / dpi.DpiScaleX;
-        }
-        else
-        {
-            var area = SystemParameters.WorkArea;
-            Left = area.Left;
-            Top = area.Top;
-            Width = area.Width;
-        }
+        ReleaseSpace(); // versões antigas reservavam a faixa do topo
+        var area = SystemParameters.WorkArea;
+        Left = area.Left;
+        Top = area.Top;
+        Width = area.Width;
         Height = BarHeight;
     }
 
@@ -328,16 +315,14 @@ public sealed class MenuBarWindow : Window
         var dpi = VisualTreeHelper.GetDpi(this);
         var rect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, BarHeight * dpi.DpiScaleY);
         var (cx, cy) = Native.CursorPosition();
-        // Com o espaço reservado nada fica por cima da barra: ela só sai de cena com algo em tela cheia.
-        var covered = _appBar
-            ? _fullscreen || Native.IsForegroundFullscreen()
-            : Native.ForegroundAppRect() is { } r && r.IntersectsWith(rect);
-        var mouseHere = cy <= rect.Bottom + (_hidden ? -rect.Height + 2 : 0) && cx >= rect.Left && cx <= rect.Right;
+        // Só na área de trabalho: qualquer app na frente (aberto, não minimizado) esconde a barra.
+        var onDesktop = Native.ForegroundAppRect() is null && !Native.IsForegroundFullscreen();
+        var mouseHere = !_hidden && cy <= rect.Bottom && cx >= rect.Left && cx <= rect.Right;
 
-        if (!covered || mouseHere || _popover.IsOpen)
+        if (onDesktop || mouseHere || _popover.IsOpen)
         {
             _wantHideSince = DateTime.MaxValue;
-            if (_hidden && !Native.IsForegroundFullscreen()) Reveal(true);
+            if (_hidden && onDesktop) Reveal(true);
             return;
         }
         if (_hidden) return;
