@@ -21,7 +21,7 @@ public sealed class AppSettings
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private const int CurrentVersion = 5;
+    private const int CurrentVersion = 6;
 
     /// <summary>Versão do arquivo, para migrar preferências antigas.</summary>
     public int Version { get; set; }
@@ -100,6 +100,12 @@ public sealed class AppSettings
     public bool TimeWidget { get; set; } = true;
     public bool MenuBarEnabled { get; set; } = true;
 
+    /// <summary>Menus ao encostar o mouse nas bordas esquerda/direita da área de trabalho.</summary>
+    public bool CornerMenus { get; set; } = true;
+
+    /// <summary>Apps e pastas do menu da esquerda (null = pastas padrão do usuário).</summary>
+    public System.Collections.Generic.List<string>? CornerLeftItems { get; set; }
+
     // ---------- Dock estilo Mac ----------
 
     public bool DockEnabled { get; set; }
@@ -166,8 +172,13 @@ public sealed class AppSettings
                         settings.DockEnabled = false;
                         settings.ApplyMacTaskbarOnStart = true;
                     }
-                    // v5: o dock só aparece ao levar o mouse até a parte de baixo da tela.
-                    settings.DockHideMode = "sempre";
+                    if (settings.Version < 5)
+                    {
+                        // v5: o dock só aparece ao levar o mouse até a parte de baixo da tela.
+                        settings.DockHideMode = "sempre";
+                    }
+                    // v6: o avatar fica sempre escondido e desce ao levar o mouse ao topo.
+                    settings.AvatarAutoHide = true;
                     settings.Version = CurrentVersion;
                     settings.Save();
                 }

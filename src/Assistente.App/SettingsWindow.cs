@@ -203,7 +203,7 @@ public sealed class SettingsWindow : Window
         music.FontSize = 14;
         music.Margin = new Thickness(0, 0, 0, 10);
         music.Click += (_, _) => { _settings.MusicWidget = music.IsChecked == true; _settings.Save(); Widgets.WidgetManager.Refresh(); };
-        var avatarHide = Ui.Check("Esconder o avatar quando uma janela estiver embaixo dele (volta ao levar o mouse até o topo)", _settings.AvatarAutoHide);
+        var avatarHide = Ui.Check("Deixar o avatar escondido (aparece ao levar o mouse até o topo, perto dele)", _settings.AvatarAutoHide);
         avatarHide.FontSize = 14;
         avatarHide.Margin = new Thickness(0, 0, 0, 10);
         avatarHide.Click += (_, _) => { _settings.AvatarAutoHide = avatarHide.IsChecked == true; _settings.Save(); };
@@ -216,10 +216,15 @@ public sealed class SettingsWindow : Window
         menuBar.Margin = new Thickness(0, 0, 0, 10);
         menuBar.Click += (_, _) => { _settings.MenuBarEnabled = menuBar.IsChecked == true; _settings.Save(); MenuBar.MenuBarWindow.Apply(_settings); };
 
+        var corners = Ui.Check("Menus nas bordas da área de trabalho: esquerda com seus apps e pastas, direita com atalhos do Windows", _settings.CornerMenus);
+        corners.FontSize = 14;
+        corners.Margin = new Thickness(0, 0, 0, 10);
+        corners.Click += (_, _) => { _settings.CornerMenus = corners.IsChecked == true; _settings.Save(); Corners.CornerMenu.Apply(_settings); };
+
         return Page("Geral",
             Ui.Card("Inicialização", "", startup,
                 Ui.Caption("Quando ligado, o Assistente abre sozinho assim que você entra no Windows.")),
-            Ui.Card("Avatar e mini widgets", "\uE8A9", menuBar, avatarHide, music, time,
+            Ui.Card("Avatar e mini widgets", "\uE8A9", menuBar, corners, avatarHide, music, time,
                 Ui.Caption("Aparecem ao lado do avatar com o painel fechado, para controlar a música e o timer sem abrir o Assistente.")),
             Ui.Card("Comportamento", "", delay));
     }

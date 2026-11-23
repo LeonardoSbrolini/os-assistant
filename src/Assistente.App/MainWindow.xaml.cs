@@ -70,8 +70,6 @@ public partial class MainWindow : Window
         SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
 
         // De tempos em tempos o avatar dá uma "balançadinha" para parecer vivo.
-        _avatarIdle.Tick += (_, _) => WiggleAvatar();
-        _avatarIdle.Start();
 
         CollapsedHandle.RenderTransform = _handleSlide;
         _peek.Tick += (_, _) => Peek();
@@ -86,6 +84,9 @@ public partial class MainWindow : Window
     private void Window_MouseEnter(object sender, MouseEventArgs e)
     {
         _collapseTimer.Stop();
+        // Logo depois de fechar, ignora o mouse por um instante (evita o abre-e-fecha sem parar).
+        if (DateTime.Now - _collapsedAt < TimeSpan.FromMilliseconds(350)) return;
+        if (_handleHidden && !_expanded) return;
         if (!_expanded || _collapsing) Expand();
     }
 
@@ -94,22 +95,45 @@ public partial class MainWindow : Window
         if (_expanded && !_pinned) _collapseTimer.Start();
     }
 
+    /// <summary>
+    /// O mouse está dentro da área do painel? Usa a posição real do cursor (e não o
+    /// IsMouseOver do WPF, que "pisca" durante as animações e causava o abre-e-fecha).
+    /// </summary>
+    private bool CursorInsideWindow()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var (cx, cy) = Docking.Native.CursorPosition();
+        var rect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, Height * dpi.DpiScaleY);
+        rect.Inflate(4, 4);
+        return rect.Contains(cx, cy);
+    }
+
     private void TryCollapse()
     {
         _collapseTimer.Stop();
         // Não recolhe se o mouse voltou, se algo capturou o mouse (ex.: ComboBox aberto)
         // ou se há um diálogo aberto.
-        if (_pinned || IsMouseOver || Mouse.Captured is not null || SuppressCollapse > 0) return;
+        if (_pinned || Mouse.Captured is not null || SuppressCollapse > 0) return;
+        if (CursorInsideWindow())
+        {
+            _collapseTimer.Start(); // confere de novo daqui a pouco
+            return;
+        }
         Collapse();
     }
+
+    private DateTime _collapsedAt = DateTime.MinValue;
 
     private void Expand()
     {
         _handleWantHideSince = DateTime.MaxValue;
         _expanded = true;
         _collapsing = false;
+        CollapsedHandle.BeginAnimation(OpacityProperty, null);
         CollapsedHandle.Visibility = Visibility.Collapsed;
         ExpandedPanel.Visibility = Visibility.Visible;
+        // Fundo quase invisível: a janela inteira (com as margens) conta como "dentro" para o mouse.
+        Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
         Reposition();
         AnimatePanel(show: true, onDone: null);
     }
@@ -124,10 +148,21 @@ public partial class MainWindow : Window
             if (!_collapsing) return;
             _collapsing = false;
             _expanded = false;
+            _collapsedAt = DateTime.Now;
             ExpandedPanel.Visibility = Visibility.Collapsed;
+            Background = Brushes.Transparent;
+            // A alça só aparece depois que a janela já encolheu para o tamanho dela
+            // (antes aparecia um pedaço azul no canto do painel por um instante).
+            CollapsedHandle.Opacity = 0;
             CollapsedHandle.Visibility = Visibility.Visible;
             Reposition();
-            AnimateHandleIn();
+            Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+            {
+                if (_expanded) return;
+                // Como o avatar fica sempre escondido, ele volta ao topo sem aparecer.
+                if (_settings.AvatarAutoHide && !CursorNearHandle()) SlideHandle(show: false, animate: false);
+                AnimateHandleIn();
+            }));
         });
     }
 
@@ -167,33 +202,34 @@ public partial class MainWindow : Window
         var dpi = VisualTreeHelper.GetDpi(this);
         ExpandedPanel.CacheMode = new BitmapCache { RenderAtScale = dpi.DpiScaleX, SnapsToDevicePixels = true };
 
-        // "Comprimento" = sai da borda; "largura" = ao longo da borda.
-        var lengthProp = top ? ScaleTransform.ScaleYProperty : ScaleTransform.ScaleXProperty;
-        var widthProp = top ? ScaleTransform.ScaleXProperty : ScaleTransform.ScaleYProperty;
-
-        AnimationTimeline length, width, fade;
+        // Animação suave estilo Mac: cresce um pouco a partir do avatar, com fade (sem "molas").
+        AnimationTimeline sx, sy, fade;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var easeIn = new CubicEase { EasingMode = EasingMode.EaseIn };
         if (show)
         {
-            length = Keys((0, 0.04, null), (300, 1, Tools.Anim.EaseOut));
-            width = Keys((0, 0.10, null), (110, 0.22, Tools.Anim.EaseIn), (380, 1, Tools.Anim.Back));
-            fade = Keys((0, 0, null), (140, 1, Tools.Anim.EaseOut));
+            sx = Tools.Anim.FromTo(0.94, 1, 240, ease);
+            sy = Tools.Anim.FromTo(0.90, 1, 240, ease);
+            fade = Tools.Anim.FromTo(0, 1, 180, ease);
         }
         else
         {
-            width = Keys((0, 1, null), (200, 0.12, Tools.Anim.EaseIn));
-            length = Keys((0, 1, null), (60, 1, null), (280, 0.03, Tools.Anim.EaseIn));
-            fade = Keys((0, 1, null), (180, 1, null), (280, 0, Tools.Anim.EaseIn));
+            sx = Tools.Anim.To(0.96, 170, easeIn);
+            sy = Tools.Anim.To(0.92, 170, easeIn);
+            fade = Tools.Anim.To(0, 170, easeIn);
         }
 
-        // Termina quando a animação mais longa acaba (e só se nenhuma outra começou depois).
+        // Termina quando a animação acaba (e só se nenhuma outra começou depois).
         var token = ++_panelAnimToken;
-        (show ? width : fade).Completed += (_, _) =>
+        sy.Completed += (_, _) =>
         {
             if (token != _panelAnimToken) return;
             ExpandedPanel.CacheMode = null;
             if (show)
             {
                 // Tira as animações para o painel ficar "normal" (sem custo extra).
+                ExpandedPanel.BeginAnimation(OpacityProperty, null);
+                ExpandedPanel.Opacity = 1;
                 scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
                 scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
                 ExpandedPanel.RenderTransform = Transform.Identity;
@@ -202,8 +238,8 @@ public partial class MainWindow : Window
         };
 
         ExpandedPanel.BeginAnimation(OpacityProperty, fade);
-        scale.BeginAnimation(lengthProp, length);
-        scale.BeginAnimation(widthProp, width);
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, sx);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, sy);
     }
 
     private int _panelAnimToken;
@@ -220,7 +256,7 @@ public partial class MainWindow : Window
 
     private void AnimateHandleIn()
     {
-        CollapsedHandle.BeginAnimation(OpacityProperty, Tools.Anim.FromTo(0, 1, 250));
+        CollapsedHandle.BeginAnimation(OpacityProperty, Tools.Anim.FromTo(0, 1, 160));
     }
 
 
@@ -480,38 +516,34 @@ public partial class MainWindow : Window
     private DateTime _handleWantHideSince = DateTime.MaxValue;
 
     /// <summary>
-    /// Como o dock do Mac: o avatar sai de cena quando uma janela fica embaixo dele e volta
-    /// ao levar o mouse até a borda. Fica sempre se houver widget de música/timer.
+    /// O avatar fica sempre escondido acima da tela e só desce quando o mouse encosta no
+    /// topo, perto dele. Sai de novo quando o mouse se afasta.
     /// </summary>
     private void Peek()
     {
         if (_expanded || !_settings.AvatarAutoHide)
         {
             _handleWantHideSince = DateTime.MaxValue;
-            if (_handleHidden) SlideHandle(show: true);
+            if (_handleHidden && !_expanded) SlideHandle(show: true);
             return;
         }
 
         var dpi = VisualTreeHelper.GetDpi(this);
         double sx = dpi.DpiScaleX, sy = dpi.DpiScaleY;
-        // Avatar + widgets ao lado formam uma "faixa" (como as abas do navegador).
-        var rect = Widgets.WidgetManager.UnionWith(new Rect(Left, Top, Width, Height));
-        rect = new Rect(rect.Left * sx, rect.Top * sy, rect.Width * sx, rect.Height * sy);
         var (cx, cy) = Docking.Native.CursorPosition();
         var area = SystemParameters.WorkArea;
-        var fg = Docking.Native.ForegroundAppRect();
-        var covered = fg is { } r && r.IntersectsWith(rect);
 
         if (_handleHidden)
         {
+            var rect = Widgets.WidgetManager.UnionWith(new Rect(Left, Top, Width, Height));
+            rect = new Rect(rect.Left * sx, rect.Top * sy, rect.Width * sx, rect.Height * sy);
             var atEdge = _settings.Edge switch
             {
-                DockEdge.Top => cy <= area.Top * sy + 2 && cx >= rect.Left - 60 && cx <= rect.Right + 60,
-                DockEdge.Left => cx <= area.Left * sx + 2 && cy >= rect.Top - 60 && cy <= rect.Bottom + 60,
-                _ => cx >= area.Right * sx - 3 && cy >= rect.Top - 60 && cy <= rect.Bottom + 60,
+                DockEdge.Top => cy <= area.Top * sy + 2 && cx >= rect.Left - 40 && cx <= rect.Right + 40,
+                DockEdge.Left => cx <= area.Left * sx + 2 && cy >= rect.Top - 40 && cy <= rect.Bottom + 40,
+                _ => cx >= area.Right * sx - 3 && cy >= rect.Top - 40 && cy <= rect.Bottom + 40,
             };
-            // Volta ao levar o mouse até a borda, ou quando não há mais janela por cima (área de trabalho).
-            if ((atEdge && !Docking.Native.IsForegroundFullscreen()) || !covered)
+            if (atEdge && !Docking.Native.IsForegroundFullscreen())
             {
                 _handleWantHideSince = DateTime.MaxValue;
                 SlideHandle(show: true);
@@ -519,21 +551,29 @@ public partial class MainWindow : Window
             return;
         }
 
-        var near = rect;
-        near.Inflate(24, 24);
-        var mouseNear = IsMouseOver || near.Contains(cx, cy);
-        if (mouseNear || !covered)
+        if (IsMouseOver || CursorNearHandle())
         {
             _handleWantHideSince = DateTime.MaxValue;
             return;
         }
         if (_handleWantHideSince == DateTime.MaxValue) _handleWantHideSince = DateTime.Now;
-        if (DateTime.Now - _handleWantHideSince > TimeSpan.FromMilliseconds(500)) SlideHandle(show: false);
+        if (DateTime.Now - _handleWantHideSince > TimeSpan.FromMilliseconds(600)) SlideHandle(show: false);
     }
 
-    private void SlideHandle(bool show)
+    /// <summary>Mouse perto do avatar ou dos mini widgets ao lado dele?</summary>
+    private bool CursorNearHandle()
     {
-        if (_handleHidden == !show) return;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var rect = Widgets.WidgetManager.UnionWith(new Rect(Left, Top, Width, Height));
+        rect = new Rect(rect.Left * dpi.DpiScaleX, rect.Top * dpi.DpiScaleY, rect.Width * dpi.DpiScaleX, rect.Height * dpi.DpiScaleY);
+        rect.Inflate(30, 30);
+        var (cx, cy) = Docking.Native.CursorPosition();
+        return rect.Contains(cx, cy);
+    }
+
+    private void SlideHandle(bool show, bool animate = true)
+    {
+        if (_handleHidden == !show && animate) return;
         _handleHidden = !show;
         // Os widgets do topo somem e voltam junto com o avatar.
         Widgets.WidgetManager.Suppressed = !show;
@@ -541,7 +581,14 @@ public partial class MainWindow : Window
         var to = show ? 0 : _settings.Edge == DockEdge.Right ? distance : -distance;
         var prop = _settings.Edge == DockEdge.Top ? TranslateTransform.YProperty : TranslateTransform.XProperty;
         _handleSlide.BeginAnimation(_settings.Edge == DockEdge.Top ? TranslateTransform.XProperty : TranslateTransform.YProperty, null);
-        _handleSlide.BeginAnimation(prop, Tools.Anim.To(to, show ? 280 : 240, show ? Tools.Anim.Back : Tools.Anim.EaseIn));
+        if (!animate)
+        {
+            _handleSlide.BeginAnimation(prop, null);
+            if (prop == TranslateTransform.YProperty) _handleSlide.Y = to; else _handleSlide.X = to;
+            return;
+        }
+        var ease = new CubicEase { EasingMode = show ? EasingMode.EaseOut : EasingMode.EaseIn };
+        _handleSlide.BeginAnimation(prop, Tools.Anim.To(to, show ? 220 : 180, ease));
     }
 
     /// <summary>Abre o painel fixado mostrando a ferramenta indicada.</summary>

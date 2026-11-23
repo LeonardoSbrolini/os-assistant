@@ -38,6 +38,8 @@ As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferr
 
 **Barra de menus no topo** (Configurações › Geral): quando não há janela por cima, uma barra fina no topo da tela mostra timer, música, rede, CPU (com gráfico), memória, bateria e relógio. Passar o mouse num item abre um popup com detalhes (gráfico da CPU, calendário do mês, controles da música etc.). Ela só aparece na área de trabalho: com qualquer app na frente ela some.
 
+**Menus nas bordas da área de trabalho** (Configurações › Geral): com a área de trabalho à vista, encostar o mouse na borda esquerda abre seus apps e pastas (adicione com "Adicionar app/pasta", remova com o botão direito); na borda direita ficam atalhos do Windows (impressoras, painel de controle, gerenciador de tarefas, rede, Bluetooth, lixeira…).
+
 **Apps em segundo plano**: a setinha "^" do dock abre um painel próprio com os apps rodando sem janela (Discord, Steam, OneDrive…). Clique abre o app; ao passar o mouse aparecem os botões de abrir a pasta e fechar o app (clique duas vezes para confirmar).
 
 **Mini widgets** (com o painel fechado, ao lado do avatar; dá para desligar em Configurações › Geral):

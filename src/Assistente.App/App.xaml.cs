@@ -39,6 +39,7 @@ public partial class App : Application
         Widgets.WidgetManager.Start(window);
         Docking.DockWindow.Apply(settings); // também devolve a barra do Windows se a v0.9.0 escondeu
         MenuBar.MenuBarWindow.Apply(settings);
+        Corners.CornerMenu.Apply(settings);
 
         if (settings.ApplyMacTaskbarOnStart)
         {
