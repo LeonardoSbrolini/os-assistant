@@ -90,7 +90,7 @@ public abstract class MiniWidget : Window
             Visibility = Visibility.Collapsed,
             IsHitTestVisible = false,
         };
-        _progress = new Border { Height = 2, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(0, 1, 1, 0) };
+        _progress = new Border { Height = 2, Width = 0, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(0, 1, 1, 0) };
         _progress.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
         _progressTrack.Child = _progress;
         layers.Children.Add(_progressTrack);
@@ -128,7 +128,8 @@ public abstract class MiniWidget : Window
         }
         _progressTrack.Visibility = Visibility.Visible;
         if (brush is not null) _progress.Background = brush;
-        var width = Math.Max(0, Pill.ActualWidth - 2) * Math.Clamp(f, 0, 1);
+        var width = Math.Max(0, Pill.ActualWidth - 2) * Math.Clamp(double.IsNaN(f) ? 0 : f, 0, 1);
+        if (double.IsNaN(_progress.Width)) _progress.Width = 0;
         _progress.BeginAnimation(WidthProperty, Anim.To(width, 400));
     }
 

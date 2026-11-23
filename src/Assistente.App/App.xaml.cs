@@ -86,10 +86,15 @@ public partial class App : Application
         base.OnExit(e);
     }
 
+    private static DateTime _lastErrorDialog = DateTime.MinValue;
+
     private static void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        e.Handled = true;
+        // No máximo um aviso por minuto (um erro repetido não enche a tela de janelas).
+        if (DateTime.Now - _lastErrorDialog < TimeSpan.FromMinutes(1)) return;
+        _lastErrorDialog = DateTime.Now;
         MessageBox.Show($"Ocorreu um erro inesperado:\n\n{e.Exception.Message}", "Assistente",
             MessageBoxButton.OK, MessageBoxImage.Error);
-        e.Handled = true;
     }
 }
