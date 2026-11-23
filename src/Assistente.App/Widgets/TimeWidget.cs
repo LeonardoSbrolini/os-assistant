@@ -17,7 +17,7 @@ namespace Assistente.App.Widgets;
 public sealed class TimeWidget : MiniWidget
 {
     private const double RingSize = 22;
-    private const double RingThickness = 2.5;
+    private const double RingThickness = 3;
 
     private static TimerService Timer => TimerService.Instance;
     private static StopwatchService Watch => StopwatchService.Instance;
@@ -31,8 +31,8 @@ public sealed class TimeWidget : MiniWidget
     };
     private readonly TextBlock _time = new()
     {
-        FontSize = 13.5,
-        FontWeight = FontWeights.SemiBold,
+        FontSize = 14,
+        FontWeight = FontWeights.Bold,
         VerticalAlignment = VerticalAlignment.Center,
         Margin = new Thickness(8, 0, 6, 0),
     };
@@ -46,10 +46,10 @@ public sealed class TimeWidget : MiniWidget
         Margin = new Thickness(0, 0, 6, 0),
     };
     private readonly StackPanel _buttons = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-    private readonly Button _pause;
-    private readonly Button _restart;
-    private readonly Button _mute;
-    private readonly Button _close;
+    private readonly PillButton _pause;
+    private readonly PillButton _restart;
+    private readonly PillButton _mute;
+    private readonly PillButton _close;
     private bool _showingTimer;
     private bool _pulsing;
     private string _stateKey = "";
@@ -120,10 +120,11 @@ public sealed class TimeWidget : MiniWidget
 
         _icon.Text = _showingTimer ? (finished ? "" : "") : "";
         _label.Text = _showingTimer && Timer.Label.Length > 0 ? Timer.Label : "";
+        _label.Foreground = Brushes.White;
         _label.Visibility = _label.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         _pause.Visibility = finished ? Visibility.Collapsed : Visibility.Visible;
-        _pause.Content = running ? "" : "";
+        _pause.Glyph = running ? "" : "";
         Tip(_pause, running ? "Pausar" : "Continuar");
         _restart.Visibility = finished ? Visibility.Visible : Visibility.Collapsed;
         _mute.Visibility = finished && Timer.AlarmRinging ? Visibility.Visible : Visibility.Collapsed;
@@ -138,14 +139,15 @@ public sealed class TimeWidget : MiniWidget
             _arc.Stroke = _stateBrush;
             _icon.Foreground = _stateBrush;
             var color = _stateBrush is SolidColorBrush solid ? solid.Color : Colors.White;
+            SetAccent(color);
             Backdrop.Background = new LinearGradientBrush(
                 new GradientStopCollection
                 {
-                    new(Color.FromArgb(0x40, color.R, color.G, color.B), 0),
-                    new(Color.FromArgb(0x00, color.R, color.G, color.B), 0.8),
+                    new(Color.FromArgb(0x70, color.R, color.G, color.B), 0),
+                    new(Color.FromArgb(0x18, color.R, color.G, color.B), 1),
                 }, 0);
         }
-        _time.SetResourceReference(TextBlock.ForegroundProperty, finished ? "ErrorBrush" : "TextBrush");
+        _time.Foreground = finished ? _stateBrush : Brushes.White;
 
         var pulse = finished && Timer.AlarmRinging || !running && !finished;
         if (pulse != _pulsing)

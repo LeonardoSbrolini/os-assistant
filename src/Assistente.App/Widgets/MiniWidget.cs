@@ -31,7 +31,7 @@ public abstract class MiniWidget : Window
     private readonly ScaleTransform _hover = new();
     private readonly Border _body;
     private readonly Border _progressTrack;
-    private readonly Border _progress;
+    private readonly Border _progress = new() { Height = 2.5, Width = 0, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(0, 1, 1, 0) };
     private bool _shown;
 
     protected MiniWidget(WidgetSide side)
@@ -59,10 +59,10 @@ public abstract class MiniWidget : Window
             BorderThickness = new Thickness(1),
             RenderTransformOrigin = new Point(0.5, 0.5),
             RenderTransform = new TransformGroup { Children = { _hover, _slide } },
-            // Borda com brilho em cima (efeito vidro).
-            BorderBrush = new LinearGradientBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF), 90),
+            // Vidro escuro próprio (não depende do tema), para as cores da capa/estado aparecerem bem.
+            Background = new LinearGradientBrush(Color.FromArgb(0xF0, 0x1E, 0x1F, 0x26), Color.FromArgb(0xF0, 0x10, 0x11, 0x15), 90),
         };
-        Pill.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
+        SetAccent(null);
 
         // Camadas: fundo (capa/cor), brilho, conteúdo e linha de progresso.
         var layers = new Grid();
@@ -84,14 +84,12 @@ public abstract class MiniWidget : Window
         layers.Children.Add(_body);
         _progressTrack = new Border
         {
-            Height = 2,
+            Height = 2.5,
             VerticalAlignment = VerticalAlignment.Bottom,
             Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
             Visibility = Visibility.Collapsed,
             IsHitTestVisible = false,
         };
-        _progress = new Border { Height = 2, Width = 0, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(0, 1, 1, 0) };
-        _progress.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
         _progressTrack.Child = _progress;
         layers.Children.Add(_progressTrack);
         Pill.Child = layers;
@@ -116,6 +114,23 @@ public abstract class MiniWidget : Window
     protected UIElement Body
     {
         set => _body.Child = value;
+    }
+
+    /// <summary>
+    /// Cor do widget (capa da música, estado do timer): pinta a borda com um degradê
+    /// e a linha de progresso. null = cor de destaque do tema.
+    /// </summary>
+    protected void SetAccent(Color? color)
+    {
+        var c = color ?? ((Application.Current.Resources["AccentBrush"] as SolidColorBrush)?.Color ?? Colors.White);
+        Pill.BorderBrush = new LinearGradientBrush(
+            new GradientStopCollection
+            {
+                new(Color.FromArgb(0xD0, c.R, c.G, c.B), 0),
+                new(Color.FromArgb(0x40, c.R, c.G, c.B), 0.6),
+                new(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF), 1),
+            }, new Point(0, 0), new Point(1, 1));
+        _progress.Background = new SolidColorBrush(c);
     }
 
     /// <summary>Linha fina de progresso embaixo (null esconde).</summary>
@@ -204,25 +219,9 @@ public abstract class MiniWidget : Window
 
     // ---------- Peças reaproveitáveis ----------
 
-    protected static Button IconButton(string glyph, string tip, Action onClick, bool primary = false, double size = 24)
+    protected static PillButton IconButton(string glyph, string tip, Action onClick, bool primary = false, double size = 24)
     {
-        var button = new Button
-        {
-            Content = glyph,
-            FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
-            FontSize = size / 2.5,
-            Width = size,
-            Height = size,
-            Padding = new Thickness(0),
-            Margin = new Thickness(2, 0, 0, 0),
-            ToolTip = new ToolTip { Content = tip },
-            Focusable = false,
-            Style = (Style)Application.Current.Resources[primary ? "PrimaryButton" : "IconButton"],
-            Tag = new CornerRadius(size / 2),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        if (!primary) button.SetResourceReference(ForegroundProperty, "TextBrush");
-        button.Click += (_, _) => onClick();
+        var button = new PillButton(glyph, onClick, primary, size) { ToolTip = new ToolTip { Content = tip } };
         return button;
     }
 

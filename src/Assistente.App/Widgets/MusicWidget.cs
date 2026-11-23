@@ -22,19 +22,24 @@ public sealed class MusicWidget : MiniWidget
 
     private static MediaService Media => MediaService.Instance;
 
+    // Capa redonda que gira como um disco enquanto toca.
+    private readonly RotateTransform _spin = new();
     private readonly Border _cover = new()
     {
-        Width = 24,
-        Height = 24,
-        CornerRadius = new CornerRadius(6),
+        Width = 26,
+        Height = 26,
+        CornerRadius = new CornerRadius(13),
         VerticalAlignment = VerticalAlignment.Center,
-        BorderThickness = new Thickness(1),
-        BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
+        BorderThickness = new Thickness(1.5),
+        BorderBrush = new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)),
+        RenderTransformOrigin = new Point(0.5, 0.5),
     };
+    private bool _spinning;
     private readonly TextBlock _title = new()
     {
-        FontSize = 12,
+        FontSize = 12.5,
         FontWeight = FontWeights.SemiBold,
+        Foreground = Brushes.White,
         MaxWidth = 170,
         TextTrimming = TextTrimming.CharacterEllipsis,
         VerticalAlignment = VerticalAlignment.Center,
@@ -43,7 +48,8 @@ public sealed class MusicWidget : MiniWidget
     {
         FontSize = 11.5,
         MaxWidth = 120,
-        Opacity = 0.7,
+        Foreground = Brushes.White,
+        Opacity = 0.65,
         Margin = new Thickness(6, 0, 0, 0),
         TextTrimming = TextTrimming.CharacterEllipsis,
         VerticalAlignment = VerticalAlignment.Center,
@@ -55,7 +61,7 @@ public sealed class MusicWidget : MiniWidget
         Margin = new Thickness(8, 0, 6, 0),
         VerticalAlignment = VerticalAlignment.Center,
     };
-    private readonly Button _playPause;
+    private readonly PillButton _playPause;
     private readonly StackPanel _info;
     private readonly DispatcherTimer _progressTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private ImageSource? _lastCover;
@@ -66,6 +72,7 @@ public sealed class MusicWidget : MiniWidget
     public MusicWidget() : base(WidgetSide.After)
     {
         _tint = (Brush)Application.Current.Resources["AccentBrush"];
+        _cover.RenderTransform = _spin;
         _playPause = IconButton("", "Tocar / pausar", Media.TogglePlayPause, primary: true, size: 26);
         _playPause.Margin = new Thickness(2, 0, 2, 0);
 
@@ -141,7 +148,7 @@ public sealed class MusicWidget : MiniWidget
         _title.Text = Media.Title;
         _artist.Text = Media.Artist.Length > 0 ? Media.Artist : Media.AppName;
         Tip(_info, $"{Media.Title}\n{Media.Artist}\nTocando em {Media.AppName}\n(clique para abrir a aba Música)");
-        _playPause.Content = Media.IsPlaying ? "" : "";
+        _playPause.Glyph = Media.IsPlaying ? "" : "";
         if (!ReferenceEquals(_lastCover, Media.Cover))
         {
             _lastCover = Media.Cover;
@@ -163,6 +170,18 @@ public sealed class MusicWidget : MiniWidget
     private void UpdateEqualizer()
     {
         var run = IsVisible && Media.IsPlaying && Anim.Enabled;
+        if (run != _spinning)
+        {
+            _spinning = run;
+            if (run)
+                _spin.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(_spin.Angle, _spin.Angle + 360, TimeSpan.FromSeconds(8)) { RepeatBehavior = RepeatBehavior.Forever });
+            else
+            {
+                var angle = _spin.Angle;
+                _spin.BeginAnimation(RotateTransform.AngleProperty, null);
+                _spin.Angle = angle % 360;
+            }
+        }
         if (run == _eqRunning) return;
         _eqRunning = run;
         var i = 0;
@@ -200,7 +219,9 @@ public sealed class MusicWidget : MiniWidget
                 VerticalAlignment = VerticalAlignment.Center,
             };
             Backdrop.Background = null;
+            Backdrop.Child = null;
             SetTint((Brush)Application.Current.Resources["AccentBrush"]);
+            SetAccent(null);
             return;
         }
 
@@ -215,11 +236,18 @@ public sealed class MusicWidget : MiniWidget
             {
                 var tiny = new TransformedBitmap(bitmap, new ScaleTransform(8.0 / bitmap.PixelWidth, 8.0 / bitmap.PixelHeight));
                 tiny.Freeze();
-                var blur = new ImageBrush(tiny) { Stretch = Stretch.UniformToFill, Opacity = 0.55 };
+                var blur = new ImageBrush(tiny) { Stretch = Stretch.UniformToFill, Opacity = 0.9 };
                 RenderOptions.SetBitmapScalingMode(blur, BitmapScalingMode.Linear);
                 blur.Freeze();
                 Backdrop.Background = blur;
-                SetTint(new SolidColorBrush(Vivid(Average(tiny))));
+                // Véu escuro por cima para o texto continuar legível.
+                Backdrop.Child = new Border
+                {
+                    Background = new LinearGradientBrush(Color.FromArgb(0xA0, 0x0C, 0x0C, 0x10), Color.FromArgb(0x60, 0x0C, 0x0C, 0x10), 0),
+                };
+                var vivid = Vivid(Average(tiny));
+                SetTint(new SolidColorBrush(vivid));
+                SetAccent(vivid);
             }
             catch (Exception)
             {

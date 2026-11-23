@@ -335,6 +335,23 @@ internal static class Native
         keybd_event(VkLWin, 0, KeyEventKeyUp, UIntPtr.Zero);
     }
 
+    /// <summary>
+    /// Abre a "setinha" da bandeja (ícones ocultos: apps rodando em segundo plano).
+    /// Win+B leva o foco para a setinha; Enter abre.
+    /// </summary>
+    public static void OpenTrayOverflow()
+    {
+        WinCombo(0x42);
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            keybd_event(VkReturn, 0, 0, UIntPtr.Zero);
+            keybd_event(VkReturn, 0, KeyEventKeyUp, UIntPtr.Zero);
+        };
+        timer.Start();
+    }
+
     /// <summary>Abre o menu Iniciar (como apertar a tecla Windows).</summary>
     public static void OpenStartMenu()
     {
@@ -396,6 +413,7 @@ internal static class Native
     private const uint AbeBottom = 3;
     private const int SmCxScreen = 0, SmCyScreen = 1;
     private const byte VkLWin = 0x5B;
+    private const byte VkReturn = 0x0D;
     private const uint KeyEventKeyUp = 0x0002;
     private const uint MonitorDefaultToNearest = 2;
 
