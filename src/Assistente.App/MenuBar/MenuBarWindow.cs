@@ -61,6 +61,10 @@ public sealed class MenuBarWindow : Window
     private readonly Border _clockItem;
     private readonly TextBlock _clockText = Text("", 12.5, bold: true);
 
+    private readonly TopBar _topBar;
+    private bool _onDesktop;
+    private bool _hasBattery;
+
     private bool _hidden;
     private DateTime _wantHideSince = DateTime.MaxValue;
     private static string? _cpuName;
@@ -129,7 +133,14 @@ public sealed class MenuBarWindow : Window
         shell.Children.Add(leftEar);
         shell.Children.Add(_bar);
         shell.Children.Add(rightEar);
-        Content = shell;
+
+        // Barra de menus de ponta a ponta, atrás da ilha (desce e sobe junto com ela).
+        _topBar = new TopBar(settings, OpenIslandAt, BarHeight) { RenderTransform = _slide };
+        _topBar.Visibility = settings.TopBarEnabled ? Visibility.Visible : Visibility.Collapsed;
+        var root = new Grid();
+        root.Children.Add(_topBar);
+        root.Children.Add(shell);
+        Content = root;
 
         BuildLeft();
 
@@ -146,6 +157,15 @@ public sealed class MenuBarWindow : Window
         _clockItem = Item(Row(Glyph(""), _clockText), CalendarPopover);
         foreach (var item in new[] { _timerItem, _musicItem, _cpuItem, _batteryItem, _clockItem })
             _right.Children.Add(item);
+        ApplyCompactItems();
+
+        // Clique na ilha (fechada ou um pouco aberta) abre por completo.
+        _bar.MouseLeftButtonUp += (_, e) =>
+        {
+            if (e.Handled || _popover.State == IslandState.Full) return;
+            _tab = "inicio";
+            _popover.Open();
+        };
 
         SourceInitialized += (_, _) =>
         {
@@ -196,8 +216,42 @@ public sealed class MenuBarWindow : Window
         Current.UpdateTimer();
         Current.UpdateMusic();
         Current._watch.Start();
-        Current.Loaded += (_, _) => Current?.FitCompact();
+        Current.Loaded += (_, _) =>
+        {
+            Current?.FitCompact();
+            Current?._popover.GoRest();
+        };
         Current.BringAvatarToFront();
+    }
+
+    /// <summary>Mudou algo da barra de menus ou da ilha nas Configurações.</summary>
+    public static void Reconfigure()
+    {
+        var w = Current;
+        if (w is null) return;
+        w._topBar.Visibility = w._settings.TopBarEnabled ? Visibility.Visible : Visibility.Collapsed;
+        w._topBar.Rebuild();
+        w.ApplyCompactItems();
+        w.FitCompact();
+        if (!w._bar.IsMouseOver) w._popover.GoRest();
+    }
+
+    /// <summary>Com a barra de menus ligada, relógio/CPU/bateria saem da ilha (já estão na barra).</summary>
+    private void ApplyCompactItems()
+    {
+        var bar = _settings.TopBarEnabled;
+        _cpuItem.Visibility = bar ? Visibility.Collapsed : Visibility.Visible;
+        _clockItem.Visibility = bar ? Visibility.Collapsed : Visibility.Visible;
+        _batteryItem.Visibility = !bar && _hasBattery ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Abre a ilha por completo numa aba (usado pela barra de menus).</summary>
+    private void OpenIslandAt(string tab)
+    {
+        if (_hidden) Reveal(true);
+        _tab = tab;
+        if (_popover.State == IslandState.Full) _popover.Reflow(); else _popover.Open();
+        _popover.ArmClose();
     }
 
     // ---------- Espaço reservado no topo ----------
@@ -216,9 +270,11 @@ public sealed class MenuBarWindow : Window
         if (_hwnd == IntPtr.Zero) _hwnd = new WindowInteropHelper(this).EnsureHandle();
         ReleaseSpace(); // versões antigas reservavam a faixa do topo
         var area = SystemParameters.WorkArea;
-        Width = IslandMaxWidth + 2 * Ear + 20;
+        // Largura da tela inteira: a barra de menus vai de ponta a ponta (a parte transparente
+        // da janela deixa o clique passar para o que está embaixo).
+        Width = area.Width;
         Height = IslandMaxHeight + 40;
-        Left = area.Left + (area.Width - Width) / 2;
+        Left = area.Left;
         Top = area.Top;
     }
 
@@ -228,6 +284,9 @@ public sealed class MenuBarWindow : Window
     private static readonly Brush IslandBlack = Frozen(new SolidColorBrush(Color.FromRgb(0, 0, 0)));
     private static readonly CornerRadius CompactCorners = new(0, 0, 16, 16);
     private static readonly CornerRadius ExpandedCorners = new(0, 0, 30, 30);
+    private static readonly CornerRadius PeekCorners = new(0, 0, 24, 24);
+
+    private enum IslandState { Closed, Peek, Full }
 
     private static Brush Frozen(Brush b)
     {
@@ -317,7 +376,8 @@ public sealed class MenuBarWindow : Window
 
         var power = Forms.SystemInformation.PowerStatus;
         var hasBattery = power.BatteryChargeStatus != Forms.BatteryChargeStatus.NoSystemBattery && power.BatteryLifePercent <= 1;
-        _batteryItem.Visibility = hasBattery ? Visibility.Visible : Visibility.Collapsed;
+        _hasBattery = hasBattery;
+        _batteryItem.Visibility = hasBattery && !_settings.TopBarEnabled ? Visibility.Visible : Visibility.Collapsed;
         if (hasBattery)
         {
             _batteryText.Text = $"{power.BatteryLifePercent * 100:0}%";
@@ -325,6 +385,7 @@ public sealed class MenuBarWindow : Window
         }
 
         _clockText.Text = DateTime.Now.ToString("HH:mm", PtBr);
+        _topBar.Refresh();
         _popover.Refresh();
     }
 
@@ -348,6 +409,7 @@ public sealed class MenuBarWindow : Window
         {
             _timerItem.Visibility = Visibility.Collapsed;
         }
+        _topBar.Refresh();
         FitCompact();
     }
 
@@ -356,6 +418,7 @@ public sealed class MenuBarWindow : Window
         var media = MediaService.Instance;
         _musicItem.Visibility = media.HasSession ? Visibility.Visible : Visibility.Collapsed;
         _musicText.Text = media.Title.Length > 18 ? media.Title[..17] + "…" : media.Title;
+        _topBar.Refresh();
         _popover.Refresh();
         FitCompact();
     }
@@ -377,10 +440,19 @@ public sealed class MenuBarWindow : Window
         }
         // Na área de trabalho fica à vista; com app aberto aparece ao levar o mouse ao topo, no meio.
         var onDesktop = Native.ForegroundAppRect() is null && !Native.IsForegroundFullscreen();
-        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && cx >= rect.Left - 80 && cx <= rect.Right + 80 && !Native.IsForegroundFullscreen();
-        var mouseHere = !_hidden && rect.Contains(cx, cy);
+        var bar = _settings.TopBarEnabled;
+        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && (bar || cx >= rect.Left - 80 && cx <= rect.Right + 80) && !Native.IsForegroundFullscreen();
+        var barRect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, (BarHeight + 4) * dpi.DpiScaleY);
+        var mouseHere = !_hidden && (rect.Contains(cx, cy) || bar && barRect.Contains(cx, cy));
 
-        if (onDesktop || mouseHere || atTopEdge || _popover.IsOpen)
+        // Saiu/voltou para a área de trabalho: a ilha volta ao jeito escolhido (fechada, um pouco aberta, aberta).
+        if (onDesktop != _onDesktop)
+        {
+            _onDesktop = onDesktop;
+            if (!_hidden && !_bar.IsMouseOver && !_dragging) _popover.GoRest();
+        }
+
+        if (onDesktop || mouseHere || atTopEdge || _popover.IsExpanded || _topBar.MenuOpen)
         {
             _wantHideSince = DateTime.MaxValue;
             if (_hidden && (onDesktop || atTopEdge)) Reveal(true);
@@ -398,7 +470,11 @@ public sealed class MenuBarWindow : Window
         if (!show) _popover.Close();
         var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = show ? System.Windows.Media.Animation.EasingMode.EaseOut : System.Windows.Media.Animation.EasingMode.EaseIn };
         _slide.BeginAnimation(TranslateTransform.YProperty, Anim.To(show ? 0 : -(_bar.ActualHeight + 4), show ? 260 : 180, ease));
-        if (show) BringAvatarToFront();
+        if (show)
+        {
+            BringAvatarToFront();
+            _popover.GoRest();
+        }
     }
 
     /// <summary>O avatar e os widgets ficam por cima da barra.</summary>
@@ -665,33 +741,35 @@ public sealed class MenuBarWindow : Window
             _close.Tick += (_, _) =>
             {
                 _close.Stop();
+                _close.Interval = TimeSpan.FromMilliseconds(300);
                 if (_w._bar.IsMouseOver || _w._dragging) return;
-                Close();
+                GoRest();
             };
             _open.Tick += (_, _) =>
             {
                 _open.Stop();
-                if (_w._bar.IsMouseOver) Open();
+                if (_w._bar.IsMouseOver && State == IslandState.Closed) Peek();
             };
             _w._bar.MouseLeave += (_, _) =>
             {
                 _open.Stop();
-                if (IsOpen) _close.Start();
+                if (State != RestState) _close.Start();
             };
             _w._bar.MouseEnter += (_, _) =>
             {
                 _close.Stop();
-                if (!IsOpen) _open.Start();
+                // Passar o mouse abre um pouco; clicar abre tudo.
+                if (State == IslandState.Closed) _open.Start();
             };
             // Arrastando um arquivo até a ilha: abre direto na Bandeja.
             _w._bar.DragEnter += (_, _) =>
             {
                 _w._dragging = true;
                 _close.Stop();
-                if (!IsOpen || _w._tab != "bandeja")
+                if (State != IslandState.Full || _w._tab != "bandeja")
                 {
                     _w._tab = "bandeja";
-                    if (IsOpen) Reflow(); else Open();
+                    if (State == IslandState.Full) Reflow(); else Open();
                 }
             };
             _w._bar.DragLeave += (_, _) =>
@@ -701,21 +779,86 @@ public sealed class MenuBarWindow : Window
             };
         }
 
-        public bool IsOpen { get; private set; }
+        public IslandState State { get; private set; } = IslandState.Closed;
+
+        /// <summary>Totalmente aberta.</summary>
+        public bool IsOpen => State == IslandState.Full;
+
+        /// <summary>Um pouco ou totalmente aberta.</summary>
+        public bool IsExpanded => State != IslandState.Closed;
+
+        /// <summary>Como a ilha deve ficar parada agora (só fica aberta na área de trabalho).</summary>
+        private IslandState RestState =>
+            !_w._onDesktop || _w._hidden ? IslandState.Closed : _w._settings.IslandRest switch
+            {
+                "peek" => IslandState.Peek,
+                "aberta" => IslandState.Full,
+                _ => IslandState.Closed,
+            };
+
+        /// <summary>Volta ao jeito escolhido nas configurações.</summary>
+        public void GoRest()
+        {
+            switch (RestState)
+            {
+                case IslandState.Peek:
+                    Peek();
+                    break;
+                case IslandState.Full:
+                    if (State == IslandState.Full && _w._tab == "inicio") return;
+                    _w._tab = "inicio";
+                    if (State == IslandState.Full) Reflow(); else Open();
+                    break;
+                default:
+                    Close();
+                    break;
+            }
+        }
+
+        /// <summary>Aberta por fora (barra de menus): fecha sozinha se o mouse não vier até ela.</summary>
+        public void ArmClose()
+        {
+            _close.Stop();
+            _close.Interval = TimeSpan.FromMilliseconds(1800);
+            _close.Start();
+        }
 
         public void Open()
         {
             _close.Stop();
-            IsOpen = true;
+            _open.Stop();
+            ++_token;
+            var wasFull = State == IslandState.Full;
+            State = IslandState.Full;
             _w._compact.Visibility = Visibility.Collapsed;
             Reflow();
-            _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 220, null, 100));
+            if (!wasFull) _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 220, null, 100));
+        }
+
+        /// <summary>Um pouco aberta (como ao passar o mouse): saudação ou música e a hora.</summary>
+        public void Peek()
+        {
+            _open.Stop();
+            if (State == IslandState.Peek) return;
+            ++_token;
+            State = IslandState.Peek;
+            var (view, update) = _w.PeekView();
+            _update = update;
+            _w._compact.Visibility = Visibility.Collapsed;
+            _w._detail.Content = view;
+            _w._detail.Visibility = Visibility.Visible;
+            update?.Invoke();
+            _w._island.Measure(new Size(IslandMaxWidth - 24, double.PositiveInfinity));
+            var size = _w._island.DesiredSize;
+            _w._bar.CornerRadius = PeekCorners;
+            _w.ResizeIsland(Math.Min(IslandMaxWidth, size.Width + 24), size.Height + 2, expand: true);
+            _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 200, null, 80));
         }
 
         /// <summary>Remonta o conteúdo (ex.: trocou de aba) e ajusta o tamanho da ilha.</summary>
         public void Reflow()
         {
-            if (!IsOpen) return;
+            if (State != IslandState.Full) return;
             var (view, update) = _w.Dashboard();
             _update = update;
             _w._detail.Content = view;
@@ -732,21 +875,21 @@ public sealed class MenuBarWindow : Window
 
         public void Refresh()
         {
-            if (IsOpen) _update?.Invoke();
+            if (State != IslandState.Closed) _update?.Invoke();
         }
 
         public void Close()
         {
             _close.Stop();
             _open.Stop();
-            if (!IsOpen) return;
-            IsOpen = false;
+            if (State == IslandState.Closed) return;
+            State = IslandState.Closed;
             _update = null;
             var token = ++_token;
             var fade = Anim.To(0, 90);
             fade.Completed += (_, _) =>
             {
-                if (token != _token || IsOpen) return;
+                if (token != _token || State != IslandState.Closed) return;
                 _w._detail.Visibility = Visibility.Collapsed;
                 _w._detail.Content = null;
                 _w._compact.Visibility = Visibility.Visible;
@@ -756,6 +899,67 @@ public sealed class MenuBarWindow : Window
             };
             _w._detail.BeginAnimation(UIElement.OpacityProperty, fade);
         }
+    }
+
+    // Um pouco aberta: avatar (ou capa da música), saudação/música e a hora.
+    private (UIElement, Action?) PeekView()
+    {
+        var media = MediaService.Instance;
+        var grid = new Grid { Width = 380, Margin = new Thickness(2, 6, 2, 0) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var pic = new Border { Width = 38, Height = 38, CornerRadius = new CornerRadius(11), Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
+        grid.Children.Add(pic);
+        var title = Text("", 14, bold: true);
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        var sub = Muted("");
+        sub.TextWrapping = TextWrapping.NoWrap;
+        sub.TextTrimming = TextTrimming.CharacterEllipsis;
+        var mid = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        mid.Children.Add(title);
+        mid.Children.Add(sub);
+        Grid.SetColumn(mid, 1);
+        grid.Children.Add(mid);
+
+        var clock = Text("", 22, bold: true);
+        clock.Margin = new Thickness(12, 0, 4, 0);
+        var play = new Widgets.PillButton("\uE768", media.TogglePlayPause, false, 30);
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        right.Children.Add(play);
+        right.Children.Add(clock);
+        Grid.SetColumn(right, 2);
+        grid.Children.Add(right);
+
+        var avatar = Avatars.Find(_settings.Avatar)?.Image;
+        return (grid, () =>
+        {
+            var now = DateTime.Now;
+            clock.Text = now.ToString("HH:mm", PtBr);
+            if (media.HasSession)
+            {
+                title.Text = media.Title;
+                sub.Text = media.Artist.Length > 0 ? media.Artist : media.AppName;
+                play.Visibility = Visibility.Visible;
+                play.Glyph = media.IsPlaying ? "\uE769" : "\uE768";
+                if (media.Cover is { } img) pic.Background = new ImageBrush(img) { Stretch = Stretch.UniformToFill };
+                else pic.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+                pic.Child = null;
+            }
+            else
+            {
+                title.Text = now.Hour < 12 ? "Bom dia" : now.Hour < 18 ? "Boa tarde" : "Boa noite";
+                var t = TimerService.Instance;
+                var sw = StopwatchService.Instance;
+                sub.Text = t.State != TimerState.Idle ? "Timer: " + (t.State == TimerState.Finished ? "acabou!" : TimerService.Format(t.Remaining))
+                    : sw.IsActive ? "Cronômetro: " + StopwatchService.Short(sw.Elapsed)
+                    : Capital(now.ToString("dddd, d 'de' MMMM", PtBr));
+                play.Visibility = Visibility.Collapsed;
+                pic.Background = Brushes.Transparent;
+                if (pic.Child is null && avatar is not null) pic.Child = new Image { Source = avatar, Width = 38, Height = 38 };
+            }
+        });
     }
 
     /// <summary>Largura da pílula fechada (cabe o avatar e os itens visíveis).</summary>
@@ -781,10 +985,10 @@ public sealed class MenuBarWindow : Window
     /// <summary>Pílula fechada acompanha os itens que aparecem/somem (timer, música).</summary>
     private void FitCompact()
     {
-        if (_popover.IsOpen || !IsLoaded) return;
+        if (_popover.IsExpanded || !IsLoaded) return;
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (_popover.IsOpen) return;
+            if (_popover.IsExpanded) return;
             var w = CompactWidth();
             if (Math.Abs(w - _bar.ActualWidth) > 1) ResizeIsland(w, BarHeight, expand: false);
         }), DispatcherPriority.Loaded);
@@ -1137,7 +1341,7 @@ public sealed class MenuBarWindow : Window
         var netGraph = new LineGraph { Height = 18, ShowGrid = false, Maximum = null, Margin = new Thickness(0, 2, 0, 1) };
         var net = Stat("\uE774", "Rede", netGraph);
 
-        var hasBattery = _batteryItem.Visibility == Visibility.Visible;
+        var hasBattery = _hasBattery;
         var (lastBar, setLast) = MiniBar(hasBattery ? Color.FromRgb(0x4C, 0xC3, 0x8A) : Color.FromRgb(0x4F, 0x8C, 0xFF));
         var last = Stat(hasBattery ? "\uE83F" : "\uEDA2", hasBattery ? "Bateria" : "Disco C:", lastBar);
         last.Card.Margin = new Thickness(0);

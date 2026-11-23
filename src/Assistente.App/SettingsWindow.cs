@@ -35,6 +35,8 @@ public sealed class SettingsWindow : Window
     {
         ["Geral"] = "O básico: iniciar com o Windows e o tempo para recolher.",
         ["Ilha e menus"] = "A ilha do topo, os menus dos cantos e o menu em círculo.",
+        ["Barra de menus"] = "A barra estilo Mac ao lado da ilha: escolha o que aparece de cada lado.",
+        ["Tela de bloqueio"] = "Deixe a tela de bloqueio do Windows limpa, com cara de Mac.",
         ["Dock"] = "A barra de aplicativos que aparece embaixo.",
         ["Barra de tarefas"] = "Como a barra do Windows se comporta.",
         ["Aparência"] = "Cores, tema e transparência.",
@@ -91,6 +93,8 @@ public sealed class SettingsWindow : Window
 
         _pages["Geral"] = GeneralPage;
         _pages["Ilha e menus"] = IslandPage;
+        _pages["Barra de menus"] = TopBarPage;
+        _pages["Tela de bloqueio"] = LockScreenPage;
         _pages["Dock"] = DockPage;
         _pages["Barra de tarefas"] = TaskbarPage;
         _pages["Aparência"] = AppearancePage;
@@ -102,12 +106,14 @@ public sealed class SettingsWindow : Window
         NavRow("Geral", "");
         NavSection("Topo e menus");
         NavRow("Ilha e menus", "");
+        NavRow("Barra de menus", "\uE700");
         NavRow("Dock", "");
         NavRow("Barra de tarefas", "");
         NavSection("Visual");
         NavRow("Aparência", "");
         NavRow("Avatar", "");
         NavRow("Posição", "");
+        NavRow("Tela de bloqueio", "\uE72E");
         NavSection("Mais");
         NavRow("Chat IA", "");
         NavRow("Atualizações", "");
@@ -205,7 +211,11 @@ public sealed class SettingsWindow : Window
             Cursor = Cursors.Hand,
             ToolTip = tip,
         };
+        // O "apertar" é consumido aqui para a área de arrastar a janela não roubar o clique.
+        dot.MouseLeftButtonDown += (_, e) => e.Handled = true;
         dot.MouseLeftButtonUp += (_, e) => { e.Handled = true; click(); };
+        dot.MouseEnter += (_, _) => dot.Opacity = 0.75;
+        dot.MouseLeave += (_, _) => dot.Opacity = 1;
         return dot;
     }
 
@@ -258,7 +268,7 @@ public sealed class SettingsWindow : Window
         var right = new DockPanel();
         DockPanel.SetDock(grip, System.Windows.Controls.Dock.Top);
         right.Children.Add(grip);
-        _host.Margin = new Thickness(28, 0, 22, 18);
+        _host.Margin = new Thickness(28, 0, 4, 14);
         right.Children.Add(_host);
 
         var body = new DockPanel();
@@ -300,7 +310,13 @@ public sealed class SettingsWindow : Window
             header.Children.Add(new TextBlock { Text = sub, FontSize = 13, Foreground = Muted, Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
         var all = new List<UIElement> { header };
         all.AddRange(content);
-        return new UserControl { Content = Ui.Scroll(Ui.Stack(all.ToArray())) };
+        var scroll = new ScrollViewer
+        {
+            Style = (Style)Application.Current.Resources["MacScroll"],
+            Padding = new Thickness(0, 0, 20, 0),
+            Content = Ui.Stack(all.ToArray()),
+        };
+        return new UserControl { Content = scroll };
     }
 
     /// <summary>Linha de opção estilo Mac: título e explicação à esquerda, interruptor à direita.</summary>
@@ -355,10 +371,218 @@ public sealed class SettingsWindow : Window
         var radial = ToggleRow("Menu em círculo", "Segure um arquivo no Explorer ou na área de trabalho e clique com o botão direito: zipar, extrair, converter, remover fundo…",
             _settings.RadialMenu, v => { _settings.RadialMenu = v; _settings.Save(); Radial.RadialHook.Apply(v); }, last: true);
 
+        var rest = new StackPanel();
+        foreach (var (key, title, caption) in new[]
+        {
+            ("fechada", "Fechada", "Só a pílula preta; passar o mouse abre um pouco e clicar abre tudo."),
+            ("peek", "Um pouco aberta", "Na área de trabalho fica mostrando saudação ou música e a hora."),
+            ("aberta", "Aberta na página inicial", "Na área de trabalho fica aberta por completo, na aba Início."),
+        })
+        {
+            var radio = new RadioButton { GroupName = "islandRest", IsChecked = _settings.IslandRest == key, Margin = new Thickness(0, 4, 0, 4) };
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
+            text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
+            radio.Content = text;
+            var k = key;
+            radio.Checked += (_, _) => { _settings.IslandRest = k; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); };
+            rest.Children.Add(radio);
+        }
+
         return Page("Ilha e menus",
             Ui.Card("Topo da tela", "", island),
+            Ui.Card("Como a ilha fica na área de trabalho", "\uE8A0", rest,
+                Ui.Caption("Com um app aberto ela sempre volta a ficar fechada.")),
             Ui.Card("Cantos da tela", "", corners),
             Ui.Card("Arquivos", "", radial));
+    }
+
+    private FrameworkElement TopBarPage()
+    {
+        var enabled = ToggleRow("Mostrar a barra de menus", "Ao lado da ilha, de ponta a ponta no topo (só na área de trabalho ou ao levar o mouse ao topo).",
+            _settings.TopBarEnabled, v => { _settings.TopBarEnabled = v; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); }, last: true);
+
+        var styles = new WrapPanel();
+        foreach (var (key, name) in new[] { ("escura", "Escura"), ("preta", "Preta (igual à ilha)"), ("transparente", "Transparente") })
+        {
+            var radio = new RadioButton { GroupName = "topBarStyle", Content = name, IsChecked = _settings.TopBarStyle == key, Margin = new Thickness(0, 4, 18, 4) };
+            var k = key;
+            radio.Checked += (_, _) => { _settings.TopBarStyle = k; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); };
+            styles.Children.Add(radio);
+        }
+
+        var left = ItemsEditor(MenuBar.TopBar.LeftCatalog, () => MenuBar.TopBar.LeftItems(_settings), list => _settings.TopBarLeft = list,
+            () => _settings.TopBarLeft = null);
+        var right = ItemsEditor(MenuBar.TopBar.RightCatalog, () => MenuBar.TopBar.RightItems(_settings), list => _settings.TopBarRight = list,
+            () => _settings.TopBarRight = null);
+
+        return Page("Barra de menus",
+            Ui.Card("Barra", "\uE700", enabled, styles),
+            Ui.Card("Lado esquerdo", "\uE8E4", left,
+                Ui.Caption("Ligue o que quer ver e use as setas para mudar a ordem.")),
+            Ui.Card("Lado direito", "\uE8E2", right,
+                Ui.Caption("A data e a hora ficam bem à direita, como no Mac. Role a rodinha em cima do volume para mudar o som.")));
+    }
+
+    /// <summary>Lista de itens com interruptor e setas para reordenar.</summary>
+    private FrameworkElement ItemsEditor((string Key, string Name)[] catalog, Func<List<string>> current,
+        Action<List<string>> save, Action reset)
+    {
+        var host = new StackPanel();
+        void Render()
+        {
+            host.Children.Clear();
+            var enabled = current();
+            var order = enabled.Where(k => catalog.Any(c => c.Key == k)).ToList();
+            order.AddRange(catalog.Select(c => c.Key).Where(k => !order.Contains(k)));
+            for (var i = 0; i < order.Count; i++)
+            {
+                var key = order[i];
+                var name = catalog.First(c => c.Key == key).Name;
+                var on = enabled.Contains(key);
+                var toggle = new CheckBox { IsChecked = on, Content = name, FontSize = 13.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0) };
+                toggle.Click += (_, _) =>
+                {
+                    var list = current();
+                    if (toggle.IsChecked == true)
+                    {
+                        // Entra na posição em que aparece na lista.
+                        var before = order.Take(order.IndexOf(key)).Count(k => list.Contains(k));
+                        list.Insert(Math.Min(before, list.Count), key);
+                    }
+                    else list.Remove(key);
+                    Commit(list);
+                };
+                var up = ArrowButton("\uE70E", "Subir");
+                var down = ArrowButton("\uE70D", "Descer");
+                up.IsEnabled = on && enabled.IndexOf(key) > 0;
+                down.IsEnabled = on && enabled.IndexOf(key) < enabled.Count - 1;
+                up.Click += (_, _) => Move(key, -1);
+                down.Click += (_, _) => Move(key, 1);
+                var arrows = new StackPanel { Orientation = Orientation.Horizontal };
+                arrows.Children.Add(up);
+                arrows.Children.Add(down);
+                var row = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
+                DockPanel.SetDock(arrows, System.Windows.Controls.Dock.Right);
+                row.Children.Add(arrows);
+                row.Children.Add(toggle);
+                row.Opacity = on ? 1 : 0.6;
+                host.Children.Add(row);
+            }
+            var resetButton = Ui.Btn("Voltar ao padrão", () => { reset(); Commit(null); });
+            resetButton.HorizontalAlignment = HorizontalAlignment.Left;
+            resetButton.Margin = new Thickness(0, 8, 0, 4);
+            host.Children.Add(resetButton);
+        }
+
+        void Move(string key, int delta)
+        {
+            var list = current();
+            var i = list.IndexOf(key);
+            var j = i + delta;
+            if (i < 0 || j < 0 || j >= list.Count) return;
+            (list[i], list[j]) = (list[j], list[i]);
+            Commit(list);
+        }
+
+        void Commit(List<string>? list)
+        {
+            if (list is not null) save(list);
+            _settings.Save();
+            MenuBar.MenuBarWindow.Reconfigure();
+            Render();
+        }
+
+        Render();
+        return host;
+    }
+
+    private static Button ArrowButton(string glyph, string tip) => new()
+    {
+        Style = (Style)Application.Current.Resources["IconButton"],
+        Content = glyph,
+        ToolTip = tip,
+        Width = 30,
+        Height = 28,
+        Margin = new Thickness(2, 0, 0, 0),
+    };
+
+    private FrameworkElement LockScreenPage()
+    {
+        var status = Ui.Caption("");
+        void Say(string text) => status.Text = text;
+
+        var clutter = ToggleRow("Sem dicas e curiosidades", "Tira os textos de dicas, \"curiosidades\" e a foto que troca sozinha (Destaque do Windows).",
+            _settings.LockScreenOriginal is not null, v =>
+            {
+                try
+                {
+                    if (v) LockScreenStyle.HideClutter(_settings); else LockScreenStyle.Restore(_settings);
+                    Say(v ? "Pronto: a tela de bloqueio ficou sem dicas." : "Dicas e Destaque voltaram como estavam.");
+                }
+                catch (Exception ex) { Say("Não deu certo: " + ex.Message); }
+            }, last: true);
+
+        var swatches = new WrapPanel { Margin = new Thickness(0, 4, 0, 4) };
+        foreach (var (key, name, colors) in LockScreenStyle.Styles)
+        {
+            var preview = new Border
+            {
+                Width = 128,
+                Height = 76,
+                CornerRadius = new CornerRadius(12),
+                Margin = new Thickness(0, 0, 10, 10),
+                Cursor = Cursors.Hand,
+                BorderThickness = new Thickness(2),
+                BorderBrush = _settings.LockScreenWallpaper == key ? Ui.Res("AccentBrush") : Brushes.Transparent,
+                Background = new LinearGradientBrush(new GradientStopCollection
+                {
+                    new GradientStop(colors[0], 0), new GradientStop(colors[1], 0.55), new GradientStop(colors[2], 0.8), new GradientStop(colors[3], 1),
+                }, 35),
+                Child = new TextBlock { Text = name, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 0, 0, 8), VerticalAlignment = VerticalAlignment.Bottom },
+                ToolTip = "Usar \"" + name + "\" na tela de bloqueio",
+            };
+            var k = key;
+            preview.MouseLeftButtonUp += async (_, _) =>
+            {
+                try
+                {
+                    Say("Aplicando…");
+                    var path = LockScreenStyle.RenderWallpaper(k);
+                    await LockScreenStyle.SetImageAsync(path);
+                    _settings.LockScreenWallpaper = k;
+                    _settings.Save();
+                    foreach (Border b in swatches.Children) b.BorderBrush = Brushes.Transparent;
+                    preview.BorderBrush = Ui.Res("AccentBrush");
+                    Say("Pronto! Aperte Windows + L para ver.");
+                }
+                catch (Exception ex) { Say("Não deu certo: " + ex.Message); }
+            };
+            swatches.Children.Add(preview);
+        }
+
+        var own = Ui.Btn("Usar uma foto minha…", async () =>
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Imagens|*.jpg;*.jpeg;*.png;*.bmp" };
+            if (dialog.ShowDialog(this) != true) return;
+            try
+            {
+                await LockScreenStyle.SetImageAsync(dialog.FileName);
+                Say("Pronto! Aperte Windows + L para ver.");
+            }
+            catch (Exception ex) { Say("Não deu certo: " + ex.Message); }
+        });
+        var windowsSettings = Ui.Btn("Abrir configurações do Windows", () =>
+        {
+            try { Process.Start(new ProcessStartInfo("ms-settings:lockscreen") { UseShellExecute = true }); } catch (Exception) { }
+        });
+
+        return Page("Tela de bloqueio",
+            Ui.Card("Limpar", "\uE72E", clutter),
+            Ui.Card("Papel de parede estilo Mac", "\uE771", swatches, Ui.Inline(own), status),
+            Ui.Card("Para ficar ainda mais clean", "\uE946",
+                Ui.Caption("Nas configurações do Windows, em \"Status da tela de bloqueio\", escolha \"Nenhum\" para tirar clima e widgets, e desligue \"Mostrar a imagem de fundo na tela de entrada\" se quiser a tela de senha lisa. O relógio e a posição dos textos são do próprio Windows e não dá para mudar."),
+                Ui.Inline(windowsSettings)));
     }
 
     private FrameworkElement AppearancePage()

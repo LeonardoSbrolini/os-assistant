@@ -115,6 +115,23 @@ public sealed class AppSettings
     /// <summary>Arquivos guardados na Bandeja da ilha do topo.</summary>
     public System.Collections.Generic.List<string>? IslandTray { get; set; }
 
+    /// <summary>Barra de menus estilo Mac à esquerda e à direita da ilha.</summary>
+    public bool TopBarEnabled { get; set; } = true;
+
+    /// <summary>Itens da barra (null = padrão). Ver MenuBar.TopBar.LeftCatalog/RightCatalog.</summary>
+    public System.Collections.Generic.List<string>? TopBarLeft { get; set; }
+    public System.Collections.Generic.List<string>? TopBarRight { get; set; }
+
+    /// <summary>Fundo da barra: "transparente", "escura" ou "preta".</summary>
+    public string TopBarStyle { get; set; } = "escura";
+
+    /// <summary>Como a ilha fica parada na área de trabalho: "fechada", "peek" (um pouco aberta) ou "aberta".</summary>
+    public string IslandRest { get; set; } = "fechada";
+
+    /// <summary>Como estavam dicas/Destaque da tela de bloqueio antes de limpar (null = não mexeu).</summary>
+    public System.Collections.Generic.Dictionary<string, int>? LockScreenOriginal { get; set; }
+    public string LockScreenWallpaper { get; set; } = "noite";
+
     // ---------- Dock estilo Mac ----------
 
     public bool DockEnabled { get; set; }
