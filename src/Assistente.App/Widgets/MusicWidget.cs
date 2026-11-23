@@ -18,9 +18,9 @@ public sealed class MusicWidget : MiniWidget
 
     private readonly Border _cover = new()
     {
-        Width = 30,
-        Height = 30,
-        CornerRadius = new CornerRadius(15),
+        Width = 24,
+        Height = 24,
+        CornerRadius = new CornerRadius(6),
         VerticalAlignment = VerticalAlignment.Center,
         Margin = new Thickness(0, 0, 8, 0),
     };
@@ -28,13 +28,13 @@ public sealed class MusicWidget : MiniWidget
     {
         FontSize = 12,
         FontWeight = FontWeights.SemiBold,
-        MaxWidth = 150,
+        MaxWidth = 170,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
     private readonly TextBlock _artist = new()
     {
-        FontSize = 10.5,
-        MaxWidth = 150,
+        FontSize = 11.5,
+        MaxWidth = 120,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
     private readonly Button _playPause;
@@ -45,9 +45,11 @@ public sealed class MusicWidget : MiniWidget
     public MusicWidget() : base(WidgetSide.After)
     {
         _artist.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
-        _playPause = IconButton("", "Tocar / pausar", Media.TogglePlayPause, primary: true, size: 30);
+        _playPause = IconButton("", "Tocar / pausar", Media.TogglePlayPause, primary: true, size: 26);
 
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), MinWidth = 60 };
+        // Uma linha só (título · artista), para caber na altura de uma aba.
+        _artist.Margin = new Thickness(6, 0, 0, 0);
+        var text = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         text.Children.Add(_title);
         text.Children.Add(_artist);
 
@@ -59,13 +61,17 @@ public sealed class MusicWidget : MiniWidget
         Tip(info, "Abrir a aba Música");
         info.MouseLeftButtonUp += (_, _) => MainWindow.Current?.ShowTool("Tocando agora");
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(info);
         row.Children.Add(IconButton("", "Anterior", Media.Previous));
         row.Children.Add(_playPause);
         row.Children.Add(IconButton("", "Próxima", Media.Next));
+        var close = IconButton("\uE711", "Fechar o player (volta quando tocar outra música)", Dismiss, size: 20);
+        close.Margin = new Thickness(6, 0, 0, 0);
+        close.Opacity = 0.75;
+        row.Children.Add(close);
         Pill.Child = row;
-        Pill.Padding = new Thickness(4, 4, 5, 4);
+        Pill.Padding = new Thickness(5, 0, 5, 0);
 
         SetCover(null);
         Media.Changed += Refresh;

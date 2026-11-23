@@ -1,4 +1,5 @@
 using System;
+using System.Windows;
 using System.Windows.Threading;
 using Assistente.App.Services;
 
@@ -28,6 +29,31 @@ public static class WidgetManager
         Refresh();
     }
 
+    private static bool _suppressed;
+
+    /// <summary>Escondidos junto com o avatar (ex.: navegador em tela cheia por cima).</summary>
+    public static bool Suppressed
+    {
+        get => _suppressed;
+        set
+        {
+            if (_suppressed == value) return;
+            _suppressed = value;
+            Refresh();
+        }
+    }
+
+    /// <summary>Retângulo (DIPs) que junta o avatar com os widgets que podem aparecer.</summary>
+    public static Rect UnionWith(Rect handle)
+    {
+        foreach (var w in new MiniWidget?[] { _music, _time })
+        {
+            if (w is null || !w.HasSomething || w.ActualWidth <= 0) continue;
+            handle.Union(new Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight));
+        }
+        return handle;
+    }
+
     /// <summary>Algum widget aparecendo agora (o avatar não se esconde nesse caso).</summary>
     public static bool AnyShown => _music?.IsVisible == true || _time?.IsVisible == true;
 
@@ -35,7 +61,7 @@ public static class WidgetManager
     {
         var main = MainWindow.Current;
         if (main is null || _music is null || _time is null) return;
-        var visible = !main.IsExpanded && main.IsVisible;
+        var visible = !main.IsExpanded && main.IsVisible && !_suppressed;
 
         _music.SetShown(visible && main.Settings.MusicWidget && _music.HasSomething);
         _time.SetShown(visible && main.Settings.TimeWidget && _time.HasSomething);

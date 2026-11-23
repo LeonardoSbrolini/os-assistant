@@ -22,7 +22,10 @@ public abstract class MiniWidget : Window
 {
     /// <summary>Espaço transparente em volta da pílula (para a sombra).</summary>
     protected const double ShadowMargin = 6;
-    private const double Gap = 2;
+    private const double Gap = 4;
+
+    /// <summary>Altura da "aba" (igual à barra de abas de um navegador) — a mesma do avatar.</summary>
+    public const double TabHeight = 34;
 
     private readonly TranslateTransform _slide = new();
     private bool _shown;
@@ -46,8 +49,9 @@ public abstract class MiniWidget : Window
 
         Pill = new Border
         {
-            CornerRadius = new CornerRadius(20),
-            Padding = new Thickness(5),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(5, 0, 5, 0),
+            Height = TabHeight,
             Margin = new Thickness(ShadowMargin),
             BorderThickness = new Thickness(1),
             RenderTransform = _slide,
@@ -129,7 +133,7 @@ public abstract class MiniWidget : Window
 
     // ---------- Peças reaproveitáveis ----------
 
-    protected static Button IconButton(string glyph, string tip, Action onClick, bool primary = false, double size = 28)
+    protected static Button IconButton(string glyph, string tip, Action onClick, bool primary = false, double size = 24)
     {
         var button = new Button
         {

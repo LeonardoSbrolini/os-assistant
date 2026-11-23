@@ -28,8 +28,8 @@ public partial class MainWindow : Window
     private const double MinPanelHeight = 360;
 
     /// <summary>Tamanho do círculo do avatar na alça e da imagem dentro dele.</summary>
-    private const double AvatarCircle = 40;
-    private const double AvatarSize = 34;
+    private const double AvatarCircle = Widgets.MiniWidget.TabHeight;
+    private const double AvatarSize = 28;
 
     /// <summary>Espaço entre o avatar e a borda da tela.</summary>
     private const double EdgeGap = 6;
@@ -450,7 +450,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void Peek()
     {
-        if (_expanded || !_settings.AvatarAutoHide || Widgets.WidgetManager.AnyShown)
+        if (_expanded || !_settings.AvatarAutoHide)
         {
             _handleWantHideSince = DateTime.MaxValue;
             if (_handleHidden) SlideHandle(show: true);
@@ -459,9 +459,13 @@ public partial class MainWindow : Window
 
         var dpi = VisualTreeHelper.GetDpi(this);
         double sx = dpi.DpiScaleX, sy = dpi.DpiScaleY;
-        var rect = new Rect(Left * sx, Top * sy, Width * sx, Height * sy);
+        // Avatar + widgets ao lado formam uma "faixa" (como as abas do navegador).
+        var rect = Widgets.WidgetManager.UnionWith(new Rect(Left, Top, Width, Height));
+        rect = new Rect(rect.Left * sx, rect.Top * sy, rect.Width * sx, rect.Height * sy);
         var (cx, cy) = Docking.Native.CursorPosition();
         var area = SystemParameters.WorkArea;
+        var fg = Docking.Native.ForegroundAppRect();
+        var covered = fg is { } r && r.IntersectsWith(rect);
 
         if (_handleHidden)
         {
@@ -471,7 +475,8 @@ public partial class MainWindow : Window
                 DockEdge.Left => cx <= area.Left * sx + 2 && cy >= rect.Top - 60 && cy <= rect.Bottom + 60,
                 _ => cx >= area.Right * sx - 3 && cy >= rect.Top - 60 && cy <= rect.Bottom + 60,
             };
-            if (atEdge && !Docking.Native.IsForegroundFullscreen())
+            // Volta ao levar o mouse até a borda, ou quando não há mais janela por cima (área de trabalho).
+            if ((atEdge && !Docking.Native.IsForegroundFullscreen()) || !covered)
             {
                 _handleWantHideSince = DateTime.MaxValue;
                 SlideHandle(show: true);
@@ -482,8 +487,6 @@ public partial class MainWindow : Window
         var near = rect;
         near.Inflate(24, 24);
         var mouseNear = IsMouseOver || near.Contains(cx, cy);
-        var fg = Docking.Native.ForegroundAppRect();
-        var covered = fg is { } r && r.IntersectsWith(rect);
         if (mouseNear || !covered)
         {
             _handleWantHideSince = DateTime.MaxValue;
@@ -497,6 +500,8 @@ public partial class MainWindow : Window
     {
         if (_handleHidden == !show) return;
         _handleHidden = !show;
+        // Os widgets do topo somem e voltam junto com o avatar.
+        Widgets.WidgetManager.Suppressed = !show;
         var distance = (_settings.Edge == DockEdge.Top ? Height : Width) + 4;
         var to = show ? 0 : _settings.Edge == DockEdge.Right ? distance : -distance;
         var prop = _settings.Edge == DockEdge.Top ? TranslateTransform.YProperty : TranslateTransform.XProperty;

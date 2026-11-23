@@ -24,7 +24,7 @@ public sealed class TimeWidget : MiniWidget
     };
     private readonly TextBlock _time = new()
     {
-        FontSize = 15,
+        FontSize = 13.5,
         FontWeight = FontWeights.SemiBold,
         VerticalAlignment = VerticalAlignment.Center,
         Margin = new Thickness(0, 0, 6, 0),
@@ -69,11 +69,11 @@ public sealed class TimeWidget : MiniWidget
         info.MouseLeftButtonUp += (_, _) =>
             MainWindow.Current?.ShowTool(_showingTimer ? TimerTool.ToolName : "Cronômetro");
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(info);
         row.Children.Add(_buttons);
         Pill.Child = row;
-        Pill.Padding = new Thickness(4, 4, 4, 4);
+        Pill.Padding = new Thickness(5, 0, 5, 0);
 
         Timer.Changed += Refresh;
         Timer.Ticked += UpdateTime;

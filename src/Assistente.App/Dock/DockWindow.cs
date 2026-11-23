@@ -554,10 +554,18 @@ public sealed class DockWindow : Window
         var dockBottom = (Top + Height) * dpi.DpiScaleY;
         var fullscreen = Native.IsForegroundFullscreen();
 
+        // A janela da frente encosta no dock? (na área de trabalho não há janela: o dock fica à vista)
+        bool Covered()
+        {
+            var rect = Native.ForegroundAppRect();
+            return rect is { } r && r.Right > shelfLeft && r.Left < shelfRight && r.Bottom > dockTop && r.Top < dockBottom;
+        }
+
         if (_hidden)
         {
-            // Mouse na borda de baixo, na altura do dock: aparece.
-            if (!fullscreen && cy >= dockBottom - 4 && cy <= dockBottom + 4 && cx >= shelfLeft - 40 && cx <= shelfRight + 40)
+            // Mouse na borda de baixo, na altura do dock, ou nenhuma janela por cima: aparece.
+            var atEdge = cy >= dockBottom - 4 && cy <= dockBottom + 4 && cx >= shelfLeft - 40 && cx <= shelfRight + 40;
+            if (!fullscreen && (atEdge || (HideMode == "janela" && !Covered())))
             {
                 _wantHideSince = DateTime.MaxValue;
                 Reveal(true);
@@ -569,12 +577,7 @@ public sealed class DockWindow : Window
         bool wantHide;
         if (mouseOnDock || _menuOpen) wantHide = false;
         else if (fullscreen || HideMode == "sempre") wantHide = true;
-        else
-        {
-            // Como no Mac: some quando a janela em primeiro plano encosta no dock.
-            var rect = Native.ForegroundAppRect();
-            wantHide = rect is { } r && r.Right > shelfLeft && r.Left < shelfRight && r.Bottom > dockTop && r.Top < dockBottom;
-        }
+        else wantHide = Covered();
 
         if (!wantHide)
         {
