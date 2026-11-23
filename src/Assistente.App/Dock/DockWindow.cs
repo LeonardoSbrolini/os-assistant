@@ -283,16 +283,7 @@ public sealed class DockWindow : Window
             }
         }
 
-        // Canto direito, como a barra do Mac/Windows: Wi‑Fi, volume, bateria e relógio.
-        if (_settings.DockShowTray)
-        {
-            entries.Add(DockItem.Separator("::sep2"));
-            entries.Add(DockItem.Glyph("::tray", "\uE70E", "Apps rodando em segundo plano (ícones ocultos)", Native.OpenTrayOverflow));
-            entries.Add(DockItem.Glyph("::net", "\uE701", "Wi‑Fi, som e bateria (Win + A)", () => Native.WinCombo(0x41)));
-            entries.Add(DockItem.Glyph("::vol", "\uE767", "Volume (Win + A)", () => Native.WinCombo(0x41)));
-            if (HasBattery()) entries.Add(DockItem.Glyph("::bat", "\uE83F", "Bateria (Win + A)", () => Native.WinCombo(0x41)));
-            entries.Add(DockItem.Clock(() => Native.WinCombo(0x4E)));
-        }
+        // Wi‑Fi, volume, relógio e apps em segundo plano ficam no menu do canto de baixo à direita.
 
         var signature = string.Join("|", entries.Select(e => e.Key)) + "#" + IconSize + Magnify + HideMode + TaskbarHidden;
         if (signature == _signature)

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -76,7 +77,7 @@ public sealed class CornerMenu : Window
         {
             var mainEdge = _settings?.Edge;
             _left?.Watch(enabled: mainEdge != DockEdge.Left);
-            _right?.Watch(enabled: mainEdge != DockEdge.Right);
+            _right?.Watch(enabled: true);
         }
         catch (Exception)
         {
@@ -103,14 +104,14 @@ public sealed class CornerMenu : Window
 
         var title = new TextBlock
         {
-            Text = isLeft ? "Meus atalhos" : "Atalhos do Windows",
+            Text = isLeft ? "Meus atalhos" : "Central do Windows",
             FontSize = 15,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(6, 0, 0, 2),
         };
         var caption = new TextBlock
         {
-            Text = isLeft ? "Apps e pastas que você escolheu" : "Impressoras, painel de controle e mais",
+            Text = isLeft ? "Apps e pastas que você escolheu" : "Wi‑Fi, som, notificações e atalhos",
             FontSize = 11.5,
             Opacity = 0.55,
             Margin = new Thickness(6, 0, 0, 12),
@@ -156,19 +157,22 @@ public sealed class CornerMenu : Window
         var screenW = SystemParameters.PrimaryScreenWidth * dpi.DpiScaleX;
         var area = SystemParameters.WorkArea;
 
+        var screenH = SystemParameters.PrimaryScreenHeight * dpi.DpiScaleY;
+        bool AtTrigger() => _isLeft
+            ? cx <= 1 && cy > (area.Top + 60) * dpi.DpiScaleY && cy < (area.Bottom - 90) * dpi.DpiScaleY
+            : cx >= screenW - 3 && cy >= screenH - 3; // canto de baixo à direita
+
         if (!_open)
         {
             if (!enabled) return;
-            // Mouse encostado na borda (fora dos cantos, onde ficam a barra do topo e o dock).
-            var atEdge = (_isLeft ? cx <= 1 : cx >= screenW - 2)
-                         && cy > (area.Top + 60) * dpi.DpiScaleY && cy < (area.Bottom - 90) * dpi.DpiScaleY;
+            var atEdge = AtTrigger();
             if (!atEdge)
             {
                 _edgeSince = DateTime.MaxValue;
                 return;
             }
-            // Só na área de trabalho, e com uma pausa curtinha para não abrir sem querer.
-            if (Native.ForegroundAppRect() is not null || Native.IsForegroundFullscreen() || Mouse.LeftButton == MouseButtonState.Pressed) return;
+            // A borda esquerda só na área de trabalho; o canto de baixo funciona sempre (menos em tela cheia).
+            if ((_isLeft && Native.ForegroundAppRect() is not null) || Native.IsForegroundFullscreen() || Mouse.LeftButton == MouseButtonState.Pressed) return;
             if (_edgeSince == DateTime.MaxValue) _edgeSince = DateTime.Now;
             if (DateTime.Now - _edgeSince > TimeSpan.FromMilliseconds(120)) Open();
             return;
@@ -176,8 +180,8 @@ public sealed class CornerMenu : Window
 
         var rect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, ActualWidth * dpi.DpiScaleX, ActualHeight * dpi.DpiScaleY);
         rect.Inflate(12, 12);
-        var inside = rect.Contains(cx, cy) || (_isLeft ? cx <= 1 : cx >= screenW - 2);
-        if (inside || _busy)
+        var inside = rect.Contains(cx, cy) || AtTrigger();
+        if (inside || _busy || (!_isLeft && Docking.TrayPanel.IsOpen))
         {
             _leftSince = DateTime.MaxValue;
             return;
@@ -198,12 +202,24 @@ public sealed class CornerMenu : Window
         UpdateLayout();
 
         var area = SystemParameters.WorkArea;
-        Left = _isLeft ? SystemParameters.WorkArea.Left - ShadowSpace + 8 : area.Right - Width + ShadowSpace - 8;
-        Top = Math.Max(area.Top + 8, area.Top + (area.Height - ActualHeight) / 2);
-
-        var from = _isLeft ? -(PanelWidth + ShadowSpace) : PanelWidth + ShadowSpace;
         var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
-        _slide.BeginAnimation(TranslateTransform.XProperty, Anim.FromTo(from, 0, 260, ease));
+        if (_isLeft)
+        {
+            Left = area.Left - ShadowSpace + 8;
+            Top = Math.Max(area.Top + 8, area.Top + (area.Height - ActualHeight) / 2);
+            _slide.BeginAnimation(TranslateTransform.YProperty, null);
+            _slide.Y = 0;
+            _slide.BeginAnimation(TranslateTransform.XProperty, Anim.FromTo(-(PanelWidth + ShadowSpace), 0, 260, ease));
+        }
+        else
+        {
+            // Canto de baixo à direita: sobe do canto, logo acima da barra do Windows.
+            Left = area.Right - Width + ShadowSpace - 8;
+            Top = Math.Max(area.Top + 8, area.Bottom - ActualHeight + ShadowSpace - 8);
+            _slide.BeginAnimation(TranslateTransform.XProperty, null);
+            _slide.X = 0;
+            _slide.BeginAnimation(TranslateTransform.YProperty, Anim.FromTo(80, 0, 260, ease));
+        }
         _card.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 180));
     }
 
@@ -218,11 +234,11 @@ public sealed class CornerMenu : Window
             base.Hide();
             return;
         }
-        var to = _isLeft ? -(PanelWidth + ShadowSpace) : PanelWidth + ShadowSpace;
+        var to = _isLeft ? -(PanelWidth + ShadowSpace) : 80;
         var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn };
         var slide = Anim.To(to, 200, ease);
         slide.Completed += (_, _) => { if (!_open) base.Hide(); };
-        _slide.BeginAnimation(TranslateTransform.XProperty, slide);
+        _slide.BeginAnimation(_isLeft ? TranslateTransform.XProperty : TranslateTransform.YProperty, slide);
         _card.BeginAnimation(OpacityProperty, Anim.To(0, 200));
     }
 
@@ -269,11 +285,9 @@ public sealed class CornerMenu : Window
         }
         if (!_isLeft)
         {
-            foreach (var s in WindowsShortcuts)
-                _tiles.Children.Add(Tile(s.Name, GlyphIcon(s.Glyph), () => Launch(s.Target, s.Args), null));
+            _body.Content = CornerView();
             return;
         }
-
         foreach (var path in UserItems())
         {
             var name = Directory.Exists(path) ? new DirectoryInfo(path).Name : Native.DisplayName(path);
@@ -374,9 +388,9 @@ public sealed class CornerMenu : Window
     {
         var iconBox = new Border
         {
-            Width = 46,
-            Height = 46,
-            CornerRadius = new CornerRadius(13),
+            Width = _isLeft ? 46 : 38,
+            Height = _isLeft ? 46 : 38,
+            CornerRadius = new CornerRadius(_isLeft ? 13 : 11),
             HorizontalAlignment = HorizontalAlignment.Center,
             BorderThickness = new Thickness(1),
             BorderBrush = new SolidColorBrush(Color.FromArgb(dashed ? (byte)0x30 : (byte)0x18, 0xFF, 0xFF, 0xFF)),
@@ -403,7 +417,7 @@ public sealed class CornerMenu : Window
         var scale = new ScaleTransform(1, 1);
         var tile = new Border
         {
-            Width = 92,
+            Width = _isLeft ? 92 : 70,
             Padding = new Thickness(4, 8, 4, 8),
             CornerRadius = new CornerRadius(12),
             Background = hover,
@@ -437,6 +451,130 @@ public sealed class CornerMenu : Window
             tile.ContextMenu = menu;
         }
         return tile;
+    }
+
+    // ---------- Canto de baixo à direita ----------
+
+    private FrameworkElement CornerView()
+    {
+        var root = new StackPanel();
+
+        // Relógio grande + data (clique abre notificações e calendário do Windows).
+        var time = new TextBlock { Text = DateTime.Now.ToString("HH:mm"), FontSize = 34, FontWeight = FontWeights.Light };
+        var date = new TextBlock
+        {
+            Text = DateTime.Now.ToString("dddd, d 'de' MMMM", Ui.PtBr),
+            FontSize = 12.5,
+            Opacity = 0.65,
+        };
+        var clock = new StackPanel { Margin = new Thickness(6, 0, 0, 12) };
+        clock.Children.Add(time);
+        clock.Children.Add(date);
+        var clockRow = HoverRow(clock);
+        clockRow.ToolTip = "Notificações e calendário";
+        clockRow.MouseLeftButtonUp += (_, _) => { Hide(true); Native.WinCombo(0x4E); };
+        root.Children.Add(clockRow);
+
+        // Controles rápidos (como a central de controle do Mac).
+        var quick = new UniformGrid { Columns = 2, Margin = new Thickness(0, 4, 0, 8) };
+        quick.Children.Add(QuickTile("", "Wi‑Fi e rede", NetworkText(), () => { Hide(true); Native.WinCombo(0x41); }));
+        quick.Children.Add(QuickTile("", "Bluetooth", "Dispositivos", () => Launch("ms-settings:bluetooth", null)));
+        quick.Children.Add(QuickTile("", "Notificações", "Central do Windows", () => { Hide(true); Native.WinCombo(0x4E); }));
+        var battery = BatteryText();
+        if (battery is not null) quick.Children.Add(QuickTile("", "Bateria", battery, () => Launch("ms-settings:batterysaver", null)));
+        else quick.Children.Add(QuickTile("", "Energia", "Opções de energia", () => Launch("ms-settings:powersleep", null)));
+        root.Children.Add(quick);
+
+        // Volume: mudo, menos e mais.
+        var volume = new DockPanel { Margin = new Thickness(4, 0, 4, 10) };
+        var volLabel = new TextBlock { Text = "Volume", FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.8 };
+        var volButtons = new StackPanel { Orientation = Orientation.Horizontal };
+        volButtons.Children.Add(new Widgets.PillButton("", MediaService.VolumeMute, false, 30) { ToolTip = "Mudo" });
+        volButtons.Children.Add(new Widgets.PillButton("", MediaService.VolumeDown, false, 30) { ToolTip = "Diminuir" });
+        volButtons.Children.Add(new Widgets.PillButton("", MediaService.VolumeUp, true, 30) { ToolTip = "Aumentar" });
+        DockPanel.SetDock(volButtons, System.Windows.Controls.Dock.Right);
+        volume.Children.Add(volButtons);
+        var volIcon = GlyphIcon("");
+        volIcon.FontSize = 15;
+        volIcon.Margin = new Thickness(2, 0, 8, 0);
+        DockPanel.SetDock(volIcon, System.Windows.Controls.Dock.Left);
+        volume.Children.Add(volIcon);
+        volume.Children.Add(volLabel);
+        var volumeCard = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(6, 6, 6, 6),
+            Margin = new Thickness(3, 0, 3, 10),
+            Background = new SolidColorBrush(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF)),
+            Child = volume,
+        };
+        volume.Margin = new Thickness(0);
+        root.Children.Add(volumeCard);
+
+        // Apps rodando escondidos (Discord, Steam…).
+        var background = AddRow("", "Apps em segundo plano", () => { });
+        background.MouseLeftButtonUp += (_, _) => Docking.TrayPanel.Toggle(background);
+        root.Children.Add(background);
+
+        root.Children.Add(new TextBlock { Text = "Atalhos do Windows", FontSize = 12.5, FontWeight = FontWeights.SemiBold, Opacity = 0.8, Margin = new Thickness(6, 10, 0, 6) });
+        var tiles = new WrapPanel();
+        foreach (var s in WindowsShortcuts)
+            tiles.Children.Add(Tile(s.Name, GlyphIcon(s.Glyph), () => Launch(s.Target, s.Args), null));
+        root.Children.Add(tiles);
+
+        _busy = false;
+        return root;
+    }
+
+    private Border QuickTile(string glyph, string title, string subtitle, Action click)
+    {
+        var icon = GlyphIcon(glyph);
+        icon.FontSize = 14;
+        icon.Foreground = Brushes.White;
+        var circle = new Border { Width = 30, Height = 30, CornerRadius = new CornerRadius(15), Margin = new Thickness(0, 0, 8, 0), Child = icon };
+        circle.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        texts.Children.Add(new TextBlock { Text = title, FontSize = 12, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        texts.Children.Add(new TextBlock { Text = subtitle, FontSize = 10.5, Opacity = 0.6, TextTrimming = TextTrimming.CharacterEllipsis });
+        var panel = new DockPanel();
+        DockPanel.SetDock(circle, System.Windows.Controls.Dock.Left);
+        panel.Children.Add(circle);
+        panel.Children.Add(texts);
+
+        var hover = new SolidColorBrush(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF));
+        var tile = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(8),
+            Margin = new Thickness(3),
+            Background = hover,
+            Cursor = Cursors.Hand,
+            Child = panel,
+        };
+        tile.MouseEnter += (_, _) => hover.BeginAnimation(SolidColorBrush.ColorProperty, Anim.ColorTo(Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF), 120));
+        tile.MouseLeave += (_, _) => hover.BeginAnimation(SolidColorBrush.ColorProperty, Anim.ColorTo(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF), 180));
+        tile.MouseLeftButtonUp += (_, _) => click();
+        return tile;
+    }
+
+    private static string NetworkText()
+    {
+        try
+        {
+            return System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable() ? "Conectado" : "Sem conexão";
+        }
+        catch (Exception)
+        {
+            return "Rede";
+        }
+    }
+
+    private static string? BatteryText()
+    {
+        var power = Forms.SystemInformation.PowerStatus;
+        if (power.BatteryChargeStatus == Forms.BatteryChargeStatus.NoSystemBattery || power.BatteryLifePercent > 1) return null;
+        var text = $"{power.BatteryLifePercent * 100:0}%";
+        return power.PowerLineStatus == Forms.PowerLineStatus.Online ? text + " · carregando" : text;
     }
 
     // ---------- Abas ----------

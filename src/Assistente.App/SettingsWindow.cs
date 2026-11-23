@@ -216,7 +216,7 @@ public sealed class SettingsWindow : Window
         menuBar.Margin = new Thickness(0, 0, 0, 10);
         menuBar.Click += (_, _) => { _settings.MenuBarEnabled = menuBar.IsChecked == true; _settings.Save(); MenuBar.MenuBarWindow.Apply(_settings); };
 
-        var corners = Ui.Check("Menus nas bordas da área de trabalho: esquerda com seus apps e pastas, direita com atalhos do Windows", _settings.CornerMenus);
+        var corners = Ui.Check("Menus de canto: borda esquerda (seus apps, pastas e acessos remotos, só na área de trabalho) e canto de baixo à direita (Wi‑Fi, volume, notificações e atalhos do Windows)", _settings.CornerMenus);
         corners.FontSize = 14;
         corners.Margin = new Thickness(0, 0, 0, 10);
         corners.Click += (_, _) => { _settings.CornerMenus = corners.IsChecked == true; _settings.Save(); Corners.CornerMenu.Apply(_settings); };
@@ -486,7 +486,6 @@ public sealed class SettingsWindow : Window
 
         var enabled = Toggle("Mostrar o dock embaixo da tela", _settings.DockEnabled, v => _settings.DockEnabled = v);
         var hideTaskbar = Toggle("Com o dock ligado, esconder a barra do Windows (só o dock aparece embaixo)", _settings.DockHideTaskbar, v => _settings.DockHideTaskbar = v);
-        var tray = Toggle("Wi‑Fi, volume, bateria e relógio no canto direito do dock", _settings.DockShowTray, v => _settings.DockShowTray = v);
         RadioButton Mode(string text, string value)
         {
             var radio = Ui.Radio(text, "dockhide", _settings.DockHideMode == value);
@@ -596,8 +595,6 @@ public sealed class SettingsWindow : Window
             Ui.Card("Barra do Windows", "\uE737", hideTaskbar,
                 Ui.Caption("A barra volta sozinha se você desligar o dock ou fechar o Assistente. " +
                            "Botão direito no botão Iniciar do dock › \"Mostrar a barra do Windows\" também traz ela de volta.")),
-            Ui.Card("Canto direito", "\uE701", tray,
-                Ui.Caption("Clique no Wi‑Fi/volume/bateria para abrir as configurações rápidas do Windows, e no relógio para ver notificações e calendário.")),
             Ui.Card("Quando esconder o dock", "\uE713", autoHide, running,
                 Ui.Caption("Escondido, ele volta quando você leva o mouse até a borda de baixo da tela.")),
             Ui.Card("Tamanho", "\uE740", size, zoom),

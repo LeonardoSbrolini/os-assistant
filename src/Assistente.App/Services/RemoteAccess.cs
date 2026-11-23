@@ -90,17 +90,9 @@ public static class RemoteAccess
         if (!string.IsNullOrEmpty(c.User) && !string.IsNullOrEmpty(password))
             RunHidden("cmdkey.exe", $"/generic:TERMSRV/{c.Host} /user:{Quote(c.User)} /pass:{Quote(password)}");
 
-        // Arquivo .rdp temporário para já vir com o usuário preenchido.
-        var dir = Path.Combine(Path.GetTempPath(), "Assistente");
-        Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, $"{c.Id}.rdp");
-        var lines = new StringBuilder();
-        lines.AppendLine($"full address:s:{c.Address}");
-        if (!string.IsNullOrEmpty(c.User)) lines.AppendLine($"username:s:{c.User}");
-        lines.AppendLine("prompt for credentials:i:0");
-        lines.AppendLine("screen mode id:i:2");
-        File.WriteAllText(file, lines.ToString());
-        Process.Start(new ProcessStartInfo("mstsc.exe", Quote(file)) { UseShellExecute = true });
+        // Abre o app "Conexão de Área de Trabalho Remota" direto no computador, como se você
+        // digitasse o endereço e clicasse em Conectar (sem arquivo .rdp, que mostra aviso de editor).
+        Process.Start(new ProcessStartInfo("mstsc.exe", $"/v:{c.Address}") { UseShellExecute = true });
         return null;
     }
 
