@@ -3,12 +3,18 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Assistente.App.Services;
 using Assistente.App.Tools;
 
 namespace Assistente.App.Widgets;
 
-/// <summary>Mini player à direita do avatar: capa, música e anterior / tocar-pausar / próxima.</summary>
+/// <summary>
+/// Mini player à direita do avatar: fundo com as cores da capa, barrinhas de equalizador,
+/// música numa linha, anterior / tocar-pausar / próxima e uma linha de progresso.
+/// </summary>
 public sealed class MusicWidget : MiniWidget
 {
     /// <summary>Depois de tanto tempo pausado, o widget some sozinho.</summary>
@@ -22,7 +28,8 @@ public sealed class MusicWidget : MiniWidget
         Height = 24,
         CornerRadius = new CornerRadius(6),
         VerticalAlignment = VerticalAlignment.Center,
-        Margin = new Thickness(0, 0, 8, 0),
+        BorderThickness = new Thickness(1),
+        BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
     };
     private readonly TextBlock _title = new()
     {
@@ -30,50 +37,85 @@ public sealed class MusicWidget : MiniWidget
         FontWeight = FontWeights.SemiBold,
         MaxWidth = 170,
         TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
     };
     private readonly TextBlock _artist = new()
     {
         FontSize = 11.5,
         MaxWidth = 120,
+        Opacity = 0.7,
+        Margin = new Thickness(6, 0, 0, 0),
         TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+    private readonly StackPanel _equalizer = new()
+    {
+        Orientation = Orientation.Horizontal,
+        Height = 12,
+        Margin = new Thickness(8, 0, 6, 0),
+        VerticalAlignment = VerticalAlignment.Center,
     };
     private readonly Button _playPause;
     private readonly StackPanel _info;
+    private readonly DispatcherTimer _progressTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private ImageSource? _lastCover;
     private string _lastTitle = "";
+    private bool _eqRunning;
+    private Brush _tint;
 
     public MusicWidget() : base(WidgetSide.After)
     {
-        _artist.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
+        _tint = (Brush)Application.Current.Resources["AccentBrush"];
         _playPause = IconButton("", "Tocar / pausar", Media.TogglePlayPause, primary: true, size: 26);
+        _playPause.Margin = new Thickness(2, 0, 2, 0);
 
-        // Uma linha só (título · artista), para caber na altura de uma aba.
-        _artist.Margin = new Thickness(6, 0, 0, 0);
+        foreach (var _ in new[] { 0, 1, 2 })
+        {
+            var bar = new Border
+            {
+                Width = 3,
+                Height = 12,
+                CornerRadius = new CornerRadius(1.5),
+                Margin = new Thickness(0, 0, 2, 0),
+                VerticalAlignment = VerticalAlignment.Bottom,
+                RenderTransformOrigin = new Point(0.5, 1),
+                RenderTransform = new ScaleTransform(1, 0.35),
+                Background = _tint,
+            };
+            _equalizer.Children.Add(bar);
+        }
+
         var text = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         text.Children.Add(_title);
         text.Children.Add(_artist);
 
         // Clicar na capa ou no nome abre a aba Música.
-        var info = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand, Background = Brushes.Transparent };
-        info.Children.Add(_cover);
-        info.Children.Add(text);
-        _info = info;
-        Tip(info, "Abrir a aba Música");
-        info.MouseLeftButtonUp += (_, _) => MainWindow.Current?.ShowTool("Tocando agora");
+        _info = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand, Background = Brushes.Transparent };
+        _info.Children.Add(_cover);
+        _info.Children.Add(_equalizer);
+        _info.Children.Add(text);
+        Tip(_info, "Abrir a aba Música");
+        _info.MouseLeftButtonUp += (_, _) => MainWindow.Current?.ShowTool("Tocando agora");
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        row.Children.Add(info);
+        row.Children.Add(_info);
         row.Children.Add(IconButton("", "Anterior", Media.Previous));
         row.Children.Add(_playPause);
         row.Children.Add(IconButton("", "Próxima", Media.Next));
-        var close = IconButton("\uE711", "Fechar o player (volta quando tocar outra música)", Dismiss, size: 20);
-        close.Margin = new Thickness(6, 0, 0, 0);
-        close.Opacity = 0.75;
+        var close = IconButton("", "Fechar o player (volta quando tocar outra música)", Dismiss, size: 20);
+        close.Margin = new Thickness(4, 0, 0, 0);
+        close.Opacity = 0.6;
         row.Children.Add(close);
-        Pill.Child = row;
-        Pill.Padding = new Thickness(5, 0, 5, 0);
+        Body = row;
 
         SetCover(null);
+        _progressTimer.Tick += (_, _) => UpdateProgress();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible) _progressTimer.Start();
+            else _progressTimer.Stop();
+            UpdateEqualizer();
+        };
         Media.Changed += Refresh;
         Refresh();
     }
@@ -107,6 +149,40 @@ public sealed class MusicWidget : MiniWidget
         }
         if (_lastTitle != Media.Title && IsVisible) Anim.FadeUp(_title, 0, 4);
         _lastTitle = Media.Title;
+        UpdateEqualizer();
+        UpdateProgress();
+    }
+
+    private void UpdateProgress()
+    {
+        var (position, duration) = Media.GetTimeline();
+        SetProgress(duration > TimeSpan.Zero ? position.TotalSeconds / duration.TotalSeconds : null, _tint);
+    }
+
+    /// <summary>Barrinhas pulando enquanto toca (param quando pausa ou o widget some).</summary>
+    private void UpdateEqualizer()
+    {
+        var run = IsVisible && Media.IsPlaying && Anim.Enabled;
+        if (run == _eqRunning) return;
+        _eqRunning = run;
+        var i = 0;
+        foreach (Border bar in _equalizer.Children)
+        {
+            var scale = (ScaleTransform)bar.RenderTransform;
+            if (!run)
+            {
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.To(0.35, 200));
+                continue;
+            }
+            var ms = new[] { 420, 300, 520 }[i++];
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.25, 1, TimeSpan.FromMilliseconds(ms))
+            {
+                AutoReverse = true,
+                RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+                BeginTime = TimeSpan.FromMilliseconds(i * 90),
+            });
+        }
     }
 
     private void SetCover(ImageSource? image)
@@ -118,17 +194,74 @@ public sealed class MusicWidget : MiniWidget
             {
                 Text = "",
                 FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
-                FontSize = 13,
+                FontSize = 11,
                 Foreground = Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            Backdrop.Background = null;
+            SetTint((Brush)Application.Current.Resources["AccentBrush"]);
+            return;
         }
-        else
+
+        _cover.Child = null;
+        _cover.Background = new ImageBrush(image) { Stretch = Stretch.UniformToFill };
+        if (IsVisible) Anim.Pop(_cover);
+
+        // Fundo com as cores da capa: a capa reduzida a poucos pixels e esticada fica "desfocada".
+        if (image is BitmapSource bitmap && bitmap.PixelWidth > 0)
         {
-            _cover.Child = null;
-            _cover.Background = new ImageBrush(image) { Stretch = Stretch.UniformToFill };
-            if (IsVisible) Anim.Pop(_cover);
+            try
+            {
+                var tiny = new TransformedBitmap(bitmap, new ScaleTransform(8.0 / bitmap.PixelWidth, 8.0 / bitmap.PixelHeight));
+                tiny.Freeze();
+                var blur = new ImageBrush(tiny) { Stretch = Stretch.UniformToFill, Opacity = 0.55 };
+                RenderOptions.SetBitmapScalingMode(blur, BitmapScalingMode.Linear);
+                blur.Freeze();
+                Backdrop.Background = blur;
+                SetTint(new SolidColorBrush(Vivid(Average(tiny))));
+            }
+            catch (Exception)
+            {
+                Backdrop.Background = null;
+            }
         }
+    }
+
+    private void SetTint(Brush brush)
+    {
+        _tint = brush;
+        foreach (Border bar in _equalizer.Children) bar.Background = brush;
+        UpdateProgress();
+    }
+
+    private static Color Average(BitmapSource source)
+    {
+        var bgra = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+        var w = bgra.PixelWidth;
+        var h = bgra.PixelHeight;
+        var pixels = new byte[w * h * 4];
+        bgra.CopyPixels(pixels, w * 4, 0);
+        long r = 0, g = 0, b = 0;
+        for (var i = 0; i < pixels.Length; i += 4)
+        {
+            b += pixels[i];
+            g += pixels[i + 1];
+            r += pixels[i + 2];
+        }
+        var n = Math.Max(1, w * h);
+        return Color.FromRgb((byte)(r / n), (byte)(g / n), (byte)(b / n));
+    }
+
+    /// <summary>Deixa a cor média da capa viva e clara o bastante para aparecer no fundo escuro.</summary>
+    private static Color Vivid(Color c)
+    {
+        double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+        var max = Math.Max(r, Math.Max(g, b));
+        var min = Math.Min(r, Math.Min(g, b));
+        if (max - min < 0.08) return Color.FromRgb(0xE8, 0xE9, 0xED); // capa cinza: usa branco
+        var boost = 0.85 / Math.Max(max, 0.01);
+        double Sat(double v) => Math.Clamp(min + (v - min) * 1.4, 0, 1);
+        return Color.FromRgb((byte)(Math.Clamp(Sat(r) * boost, 0, 1) * 255), (byte)(Math.Clamp(Sat(g) * boost, 0, 1) * 255), (byte)(Math.Clamp(Sat(b) * boost, 0, 1) * 255));
     }
 }

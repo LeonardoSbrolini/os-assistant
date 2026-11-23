@@ -28,6 +28,10 @@ public abstract class MiniWidget : Window
     public const double TabHeight = 34;
 
     private readonly TranslateTransform _slide = new();
+    private readonly ScaleTransform _hover = new();
+    private readonly Border _body;
+    private readonly Border _progressTrack;
+    private readonly Border _progress;
     private bool _shown;
 
     protected MiniWidget(WidgetSide side)
@@ -49,16 +53,53 @@ public abstract class MiniWidget : Window
 
         Pill = new Border
         {
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(5, 0, 5, 0),
+            CornerRadius = new CornerRadius(11),
             Height = TabHeight,
             Margin = new Thickness(ShadowMargin),
             BorderThickness = new Thickness(1),
-            RenderTransform = _slide,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new TransformGroup { Children = { _hover, _slide } },
+            // Borda com brilho em cima (efeito vidro).
+            BorderBrush = new LinearGradientBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF), 90),
         };
         Pill.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
-        Pill.SetResourceReference(Border.BorderBrushProperty, "BorderBrush");
+
+        // Camadas: fundo (capa/cor), brilho, conteúdo e linha de progresso.
+        var layers = new Grid();
+        layers.SizeChanged += (_, e) =>
+            layers.Clip = new RectangleGeometry(new Rect(e.NewSize), 10, 10);
+        Backdrop = new Border();
+        layers.Children.Add(Backdrop);
+        layers.Children.Add(new Border
+        {
+            Background = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new(Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF), 0),
+                    new(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 0.55),
+                }, 90),
+            IsHitTestVisible = false,
+        });
+        _body = new Border { Padding = new Thickness(6, 0, 6, 0) };
+        layers.Children.Add(_body);
+        _progressTrack = new Border
+        {
+            Height = 2,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+        };
+        _progress = new Border { Height = 2, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(0, 1, 1, 0) };
+        _progress.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+        _progressTrack.Child = _progress;
+        layers.Children.Add(_progressTrack);
+        Pill.Child = layers;
         Content = Pill;
+
+        // Cresce um pouquinho com o mouse em cima.
+        Pill.MouseEnter += (_, _) => Hover(1.04);
+        Pill.MouseLeave += (_, _) => Hover(1);
 
         SourceInitialized += (_, _) => MakeToolWindow();
         SizeChanged += (_, _) => Place();
@@ -67,6 +108,35 @@ public abstract class MiniWidget : Window
     public WidgetSide Side { get; }
 
     protected Border Pill { get; }
+
+    /// <summary>Camada de fundo (capa desfocada, cor do estado...).</summary>
+    protected Border Backdrop { get; }
+
+    /// <summary>Conteúdo do widget.</summary>
+    protected UIElement Body
+    {
+        set => _body.Child = value;
+    }
+
+    /// <summary>Linha fina de progresso embaixo (null esconde).</summary>
+    protected void SetProgress(double? fraction, Brush? brush = null)
+    {
+        if (fraction is not { } f)
+        {
+            _progressTrack.Visibility = Visibility.Collapsed;
+            return;
+        }
+        _progressTrack.Visibility = Visibility.Visible;
+        if (brush is not null) _progress.Background = brush;
+        var width = Math.Max(0, Pill.ActualWidth - 2) * Math.Clamp(f, 0, 1);
+        _progress.BeginAnimation(WidthProperty, Anim.To(width, 400));
+    }
+
+    private void Hover(double scale)
+    {
+        _hover.BeginAnimation(ScaleTransform.ScaleXProperty, Anim.To(scale, 160));
+        _hover.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.To(scale, 160));
+    }
 
     /// <summary>True quando o widget tem algo para mostrar.</summary>
     public abstract bool HasSomething { get; }
@@ -146,10 +216,11 @@ public abstract class MiniWidget : Window
             Margin = new Thickness(2, 0, 0, 0),
             ToolTip = new ToolTip { Content = tip },
             Focusable = false,
-            Style = (Style)Application.Current.Resources[primary ? "PrimaryButton" : "RoundButton"],
+            Style = (Style)Application.Current.Resources[primary ? "PrimaryButton" : "IconButton"],
             Tag = new CornerRadius(size / 2),
             VerticalAlignment = VerticalAlignment.Center,
         };
+        if (!primary) button.SetResourceReference(ForegroundProperty, "TextBrush");
         button.Click += (_, _) => onClick();
         return button;
     }
