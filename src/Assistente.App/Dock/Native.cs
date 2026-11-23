@@ -110,6 +110,14 @@ internal static class Native
 
     public static void Close(IntPtr hwnd) => PostMessage(hwnd, WmClose, IntPtr.Zero, IntPtr.Zero);
 
+    /// <summary>A janela está (na maior parte) na tela principal?</summary>
+    public static bool IsOnPrimary(IntPtr hwnd)
+    {
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+        return !GetMonitorInfo(monitor, ref info) || (info.Flags & 1) != 0;
+    }
+
     /// <summary>A janela em primeiro plano ocupa a tela inteira (jogo, vídeo em tela cheia...)?</summary>
     public static bool IsForegroundFullscreen()
     {
@@ -124,6 +132,8 @@ internal static class Native
         var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
         var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
         if (!GetMonitorInfo(monitor, ref info)) return false;
+        // Com duas telas, só conta a tela principal (onde ficam ilha, dock e menus).
+        if ((info.Flags & 1) == 0) return false;
         var m = info.Monitor;
         return r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom;
     }
@@ -323,6 +333,8 @@ internal static class Native
         GetClassName(hwnd, cls, cls.Capacity);
         if (IgnoredClasses.Contains(cls.ToString())) return null;
         if (!GetWindowRect(hwnd, out var r)) return null;
+        // Com duas telas, uma janela na segunda tela não atrapalha a ilha/dock/menus da principal.
+        if (!IsOnPrimary(hwnd)) return null;
         return new Rect(r.Left, r.Top, Math.Max(0, r.Right - r.Left), Math.Max(0, r.Bottom - r.Top));
     }
 

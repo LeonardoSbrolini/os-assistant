@@ -487,7 +487,8 @@ public sealed class MenuBarWindow : Window
         // A barra de menus fica só na área de trabalho, a não ser que a opção "ao levar o mouse ao topo" esteja ligada.
         var barTop = bar && _settings.TopBarShow == "topo";
         ShowTopBar(bar && (onDesktop || barTop && !_hidden));
-        var atTopEdge = cy <= Top * dpi.DpiScaleY + 2 && (barTop || cx >= rect.Left - 80 && cx <= rect.Right + 80) && !fullscreen;
+        var atTopEdge = cy >= Top * dpi.DpiScaleY && cy <= Top * dpi.DpiScaleY + 2 && !fullscreen &&
+            (barTop ? cx >= Left * dpi.DpiScaleX && cx < (Left + Width) * dpi.DpiScaleX : cx >= rect.Left - 80 && cx <= rect.Right + 80);
         var barRect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, (BarHeight + 4) * dpi.DpiScaleY);
         var mouseHere = !_hidden && (rect.Contains(cx, cy) || _topBarShown && barRect.Contains(cx, cy));
 

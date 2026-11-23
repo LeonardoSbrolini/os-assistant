@@ -167,17 +167,17 @@ internal sealed class TopBar : Grid
     {
         var fg = Native.Foreground;
         var pid = fg == IntPtr.Zero ? 0 : Native.GetWindowProcessId(fg);
-        if (pid == 0 || pid == (uint)Environment.ProcessId)
-            fg = _lastApp;
-        else
-            _lastApp = fg;
-        if (fg == IntPtr.Zero || Native.ForegroundAppRect() is null && fg == Native.Foreground) return "Área de trabalho";
+        if (pid == 0 || pid == (uint)Environment.ProcessId) fg = _lastApp;
+        else _lastApp = fg;
+        if (fg == IntPtr.Zero || !IsWindow(fg)) return "Área de trabalho";
+        var cls = new System.Text.StringBuilder(64);
+        GetClassName(fg, cls, cls.Capacity);
+        if (cls.ToString() is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") return "Área de trabalho";
         try
         {
             var path = Native.GetProcessPath(Native.GetWindowProcessId(fg));
             if (string.IsNullOrEmpty(path)) return "Área de trabalho";
-            if (Path.GetFileName(path).Equals("explorer.exe", StringComparison.OrdinalIgnoreCase))
-                return Native.ForegroundAppRect() is null ? "Área de trabalho" : "Explorador de Arquivos";
+            if (Path.GetFileName(path).Equals("explorer.exe", StringComparison.OrdinalIgnoreCase)) return "Explorador de Arquivos";
             var desc = FileVersionInfo.GetVersionInfo(path).FileDescription;
             var name = string.IsNullOrWhiteSpace(desc) ? Path.GetFileNameWithoutExtension(path) : desc.Trim();
             return name.Length > 28 ? name[..27] + "…" : name;
@@ -640,4 +640,5 @@ internal sealed class TopBar : Grid
     private static string Cap(string s) => s.Length == 0 ? s : char.ToUpper(s[0], PtBr) + s[1..];
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 }

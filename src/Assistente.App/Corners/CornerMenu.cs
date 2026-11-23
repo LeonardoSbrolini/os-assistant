@@ -207,8 +207,8 @@ public sealed class CornerMenu : Window
 
         var screenH = SystemParameters.PrimaryScreenHeight * dpi.DpiScaleY;
         bool AtTrigger() => _isLeft
-            ? cx <= 1 && cy > (area.Top + 60) * dpi.DpiScaleY && cy < (area.Bottom - 90) * dpi.DpiScaleY
-            : cx >= screenW - 3 && cy >= screenH - 3; // canto de baixo à direita
+            ? cx >= 0 && cx <= 1 && cy > (area.Top + 60) * dpi.DpiScaleY && cy < (area.Bottom - 90) * dpi.DpiScaleY
+            : cx >= screenW - 3 && cx < screenW && cy >= screenH - 3 && cy < screenH; // canto de baixo à direita (só na tela principal)
 
         if (!_open)
         {

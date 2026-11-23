@@ -547,9 +547,9 @@ public partial class MainWindow : Window
             rect = new Rect(rect.Left * sx, rect.Top * sy, rect.Width * sx, rect.Height * sy);
             var atEdge = _settings.Edge switch
             {
-                DockEdge.Top => cy <= area.Top * sy + 2 && cx >= rect.Left - 40 && cx <= rect.Right + 40,
-                DockEdge.Left => cx <= area.Left * sx + 2 && cy >= rect.Top - 40 && cy <= rect.Bottom + 40,
-                _ => cx >= area.Right * sx - 3 && cy >= rect.Top - 40 && cy <= rect.Bottom + 40,
+                DockEdge.Top => cy >= area.Top * sy && cy <= area.Top * sy + 2 && cx >= rect.Left - 40 && cx <= rect.Right + 40,
+                DockEdge.Left => cx >= area.Left * sx && cx <= area.Left * sx + 2 && cy >= rect.Top - 40 && cy <= rect.Bottom + 40,
+                _ => cx >= area.Right * sx - 3 && cx < area.Right * sx && cy >= rect.Top - 40 && cy <= rect.Bottom + 40,
             };
             if (atEdge && !Docking.Native.IsForegroundFullscreen())
             {
