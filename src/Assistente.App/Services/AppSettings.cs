@@ -174,6 +174,25 @@ public sealed class AppSettings
     /// <summary>Estado original do "ocultar automaticamente" da barra do Windows, para devolver depois.</summary>
     public bool? DockTaskbarWasAutoHide { get; set; }
 
+    // ---------- Papel de parede ----------
+
+    /// <summary>Imagem para todas as telas (cópia guardada em %LocalAppData%\Assistente\PapelDeParede).</summary>
+    public string? WallpaperAll { get; set; }
+
+    /// <summary>Imagem própria de cada tela (id da tela do Windows → caminho). Vence a de todas.</summary>
+    public System.Collections.Generic.Dictionary<string, string>? WallpaperMonitors { get; set; }
+
+    /// <summary>Ajuste: "preencher", "ajustar", "esticar", "centralizar", "lado-a-lado" ou "estender".</summary>
+    public string WallpaperFit { get; set; } = "preencher";
+
+    /// <summary>Recolocar o papel de parede escolhido quando a empresa (AD) ou outro programa trocar.</summary>
+    public bool WallpaperKeep { get; set; } = true;
+
+    // ---------- Janela de configurações ----------
+
+    /// <summary>A janela de configurações abre em tela cheia (true) ou em janela (false).</summary>
+    public bool SettingsFullscreen { get; set; } = true;
+
     /// <summary>Última ferramenta aberta.</summary>
     public string? LastTool { get; set; }
 

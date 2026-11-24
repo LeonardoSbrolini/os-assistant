@@ -48,7 +48,9 @@ As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferr
 - À direita: mini player quando há música tocando (capa, nome, anterior / tocar-pausar / próxima). Some depois de 10 min pausado.
 - À esquerda: timer ou cronômetro rodando, com pausar/continuar e parar. Quando o timer acaba: recomeçar ou silenciar o alarme.
 
-**Configurações** (botão ⚙ ou ícone da bandeja) abrem numa janela própria: iniciar com o Windows, temas, cor de destaque, transparência do painel e das janelas, tamanho, animações, **10 avatares originais** para a alça, posição, serviço de IA e atualizações.
+**Papel de parede** (Configurações › Papel de parede): uma imagem para todas as telas ou uma para cada tela, ajuste (preencher, ajustar, estender…) e degradês estilo Mac. Com **Manter** ligado, se a empresa (política de grupo do AD) ou outro programa trocar o fundo, o Assistente coloca o seu de volta: ao abrir, ao desbloquear, quando o Windows avisa da troca e a cada 30 s.
+
+**Configurações** (botão ⚙ ou ícone da bandeja) abrem em **tela cheia** na tela onde está o mouse (ou em janela, escolha em Geral); a bolinha verde, F11 ou dois cliques no topo alternam na hora. Nelas: iniciar com o Windows, temas, cor de destaque, transparência do painel e das janelas, tamanho, animações, **10 avatares originais** para a alça, posição, serviço de IA e atualizações.
 
 Também: ícone na bandeja (abrir, borda topo/direita/esquerda, posição na borda, iniciar com o Windows, sair), botão de fixar o painel aberto, e a última ferramenta usada é lembrada.
 
