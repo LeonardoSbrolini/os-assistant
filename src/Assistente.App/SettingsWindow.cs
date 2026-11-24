@@ -89,13 +89,16 @@ public sealed class SettingsWindow : Window
         _main = MainWindow.Current!;
         _settings = _main.Settings;
 
-        Title = "Configurações do Assistente";
+        Title = Docking.Native.SettingsTitle;
         WindowStartupLocation = WindowStartupLocation.Manual;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
         ResizeMode = ResizeMode.NoResize;
-        Topmost = true;
+        // Janela de app normal: aparece no dock/barra de tarefas e no Alt+Tab, e outras janelas
+        // podem ficar por cima dela.
+        Topmost = false;
+        ShowInTaskbar = true;
         FontFamily = new FontFamily("Segoe UI");
         FontSize = 13;
         SetResourceReference(ForegroundProperty, "TextBrush");
@@ -495,26 +498,34 @@ public sealed class SettingsWindow : Window
             rest.Children.Add(radio);
         }
 
-        var hover = new StackPanel();
-        foreach (var (key, title, caption) in new[]
+        StackPanel HoverChoice(string group, Func<string> get, Action<string> set)
         {
-            ("aberta", "Aberta", "Abre por completo, com as abas Início, Bandeja e Sistema."),
-            ("peek", "Um pouco aberta", "Mostra saudação ou música e a hora; clique para abrir tudo."),
-        })
-        {
-            var radio = new RadioButton { GroupName = "islandHover", IsChecked = _settings.IslandHover == key, Margin = new Thickness(0, 4, 0, 4) };
-            var text = new StackPanel();
-            text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
-            text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
-            radio.Content = text;
-            var k = key;
-            radio.Checked += (_, _) => { _settings.IslandHover = k; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); };
-            hover.Children.Add(radio);
+            var panel = new StackPanel();
+            foreach (var (key, title, caption) in new[]
+            {
+                ("aberta", "Menu grande", "Abre por completo, com as abas Início, Bandeja, Sistema e Tempo."),
+                ("peek", "Menu pequeno", "Mostra a hora e a música (ou a saudação); clique para abrir o grande."),
+            })
+            {
+                var radio = new RadioButton { GroupName = group, IsChecked = get() == key, Margin = new Thickness(0, 4, 0, 4) };
+                var text = new StackPanel();
+                text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
+                text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
+                radio.Content = text;
+                var k = key;
+                radio.Checked += (_, _) => { set(k); _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); };
+                panel.Children.Add(radio);
+            }
+            return panel;
         }
+        var hover = HoverChoice("islandHover", () => _settings.IslandHover, v => _settings.IslandHover = v);
+        var hoverBusy = HoverChoice("islandHoverBusy", () => _settings.IslandHoverBusy, v => _settings.IslandHoverBusy = v);
 
         return Page("Ilha e menus",
             Ui.Card("Topo da tela", "", island),
-            Ui.Card("Ao passar o mouse", "\uE8B0", hover),
+            Ui.Card("Ao passar o mouse na área de trabalho", "\uE8B0", hover),
+            Ui.Card("Ao passar o mouse com um app aberto", "\uE737", hoverBusy,
+                Ui.Caption("Abre só o menu escolhido: o pequeno não vira o grande sozinho (clique nele para abrir o grande).")),
             Ui.Card("Parada na área de trabalho", "\uE8A0", rest,
                 Ui.Caption("Se uma janela ficar embaixo dela ou encostar no topo, ela fecha sozinha e volta quando a janela sair.")),
             Ui.Card("Cantos da tela", "", corners),
@@ -525,23 +536,6 @@ public sealed class SettingsWindow : Window
     {
         var enabled = ToggleRow("Mostrar a barra de menus", "Ao lado da ilha, de ponta a ponta no topo.",
             _settings.TopBarEnabled, v => { _settings.TopBarEnabled = v; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); }, last: true);
-
-        var when = new StackPanel();
-        foreach (var (key, title, caption) in new[]
-        {
-            ("desktop", "Sempre à vista", "Some com uma transição só quando uma janela encosta no topo (maximizada) ou em tela cheia."),
-            ("topo", "Voltar ao levar o mouse ao topo", "Com uma janela maximizada, aparece quando o mouse encosta no topo da tela."),
-        })
-        {
-            var radio = new RadioButton { GroupName = "topBarShow", IsChecked = _settings.TopBarShow == key, Margin = new Thickness(0, 4, 0, 4) };
-            var text = new StackPanel();
-            text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
-            text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
-            radio.Content = text;
-            var k = key;
-            radio.Checked += (_, _) => { _settings.TopBarShow = k; _settings.Save(); MenuBar.MenuBarWindow.Reconfigure(); };
-            when.Children.Add(radio);
-        }
 
         var styles = new WrapPanel();
         foreach (var (key, name) in new[] { ("escura", "Escura"), ("preta", "Preta (igual à ilha)"), ("transparente", "Transparente") })
@@ -558,8 +552,8 @@ public sealed class SettingsWindow : Window
             () => _settings.TopBarRight = null);
 
         return Page("Barra de menus",
-            Ui.Card("Barra", "\uE700", enabled, styles),
-            Ui.Card("Quando aparece", "\uE7B3", when),
+            Ui.Card("Barra", "\uE700", enabled, styles,
+                Ui.Caption("Ela só aparece na área de trabalho: com qualquer app aberto na frente, ela some.")),
             Ui.Card("Lado esquerdo", "\uE8E4", left,
                 Ui.Caption("Ligue o que quer ver e use as setas para mudar a ordem.")),
             Ui.Card("Lado direito", "\uE8E2", right,

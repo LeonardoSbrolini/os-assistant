@@ -200,6 +200,8 @@ public sealed class CornerMenu : Window
 
     private void Watch(bool enabled)
     {
+        // Mantém o nome do Wi‑Fi atualizado para quando o menu abrir (leitura em segundo plano).
+        if (!_isLeft && enabled) _ = WifiService.Ssid;
         var dpi = VisualTreeHelper.GetDpi(this);
         var (cx, cy) = Native.CursorPosition();
         var screenW = SystemParameters.PrimaryScreenWidth * dpi.DpiScaleX;
@@ -229,7 +231,7 @@ public sealed class CornerMenu : Window
         var rect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, ActualWidth * dpi.DpiScaleX, ActualHeight * dpi.DpiScaleY);
         rect.Inflate(12, 12);
         var inside = rect.Contains(cx, cy) || AtTrigger();
-        if (inside || _busy || (!_isLeft && Docking.TrayPanel.IsOpen))
+        if (inside || _busy || CalendarPopup.IsOpen || (!_isLeft && Docking.TrayPanel.IsOpen))
         {
             _leftSince = DateTime.MaxValue;
             return;
@@ -513,8 +515,8 @@ public sealed class CornerMenu : Window
         clock.Children.Add(time);
         clock.Children.Add(date);
         var clockRow = HoverRow(clock);
-        clockRow.ToolTip = "Notificações e calendário";
-        clockRow.MouseLeftButtonUp += (_, _) => { Hide(true); Native.WinCombo(0x4E); };
+        clockRow.ToolTip = "Abrir calendário";
+        clockRow.MouseLeftButtonUp += (_, _) => CalendarPopup.Toggle(clockRow);
         root.Children.Add(clockRow);
 
         // Controles rápidos (como a central de controle do Mac).
@@ -603,6 +605,7 @@ public sealed class CornerMenu : Window
     {
         try
         {
+            if (WifiService.Ssid is { } ssid) return ssid;
             return System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable() ? "Conectado" : "Sem conexão";
         }
         catch (Exception)

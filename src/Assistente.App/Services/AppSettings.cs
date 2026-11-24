@@ -131,6 +131,9 @@ public sealed class AppSettings
     /// <summary>O que a ilha mostra ao passar o mouse: "peek" (um pouco aberta) ou "aberta".</summary>
     public string IslandHover { get; set; } = "aberta";
 
+    /// <summary>Ao passar o mouse na ilha com um app aberto na frente: "peek" (menu pequeno) ou "aberta" (menu grande).</summary>
+    public string IslandHoverBusy { get; set; } = "aberta";
+
     /// <summary>Quando a barra de menus aparece: "desktop" (só na área de trabalho) ou "topo" (também ao levar o mouse ao topo).</summary>
     public string TopBarShow { get; set; } = "desktop";
 

@@ -583,7 +583,7 @@ public sealed class DockWindow : Window
     private void Watch()
     {
         var fg = Native.Foreground;
-        if (fg != IntPtr.Zero && fg != _lastForeground && Native.GetWindowProcessId(fg) != (uint)Environment.ProcessId)
+        if (fg != IntPtr.Zero && fg != _lastForeground && (Native.GetWindowProcessId(fg) != (uint)Environment.ProcessId || Native.IsOwnAppWindow(fg)))
         {
             _lastForeground = fg;
             UpdateDots();
@@ -599,6 +599,13 @@ public sealed class DockWindow : Window
         }
 
         if (HideMode == "nunca" || !IsLoaded) return;
+
+        // Alt+Tab / Win+Tab: é só a troca de janela; o dock não aparece nem some por causa disso.
+        if (Native.IsSwitcherForeground())
+        {
+            _wantHideSince = DateTime.MaxValue;
+            return;
+        }
 
         var dpi = VisualTreeHelper.GetDpi(this);
         var (cx, cy) = Native.CursorPosition();
