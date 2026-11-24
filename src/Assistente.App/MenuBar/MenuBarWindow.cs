@@ -883,7 +883,7 @@ public sealed class MenuBarWindow : Window
             State = IslandState.Full;
             _w._compact.Visibility = Visibility.Collapsed;
             Reflow();
-            if (!wasFull) _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 220, null, 100));
+            if (!wasFull) _w.PopIn(100);
         }
 
         /// <summary>Um pouco aberta (como ao passar o mouse): saudação ou música e a hora.</summary>
@@ -901,9 +901,8 @@ public sealed class MenuBarWindow : Window
             update?.Invoke();
             _w._island.Measure(new Size(IslandMaxWidth - 24, double.PositiveInfinity));
             var size = _w._island.DesiredSize;
-            _w._bar.CornerRadius = PeekCorners;
-            _w.ResizeIsland(Math.Min(IslandMaxWidth, size.Width + 24), size.Height + 2, expand: true);
-            _w._detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 200, null, 80));
+            _w.ResizeIsland(Math.Min(IslandMaxWidth, size.Width + 24), size.Height + 2, expand: true, PeekCorners.BottomLeft);
+            _w.PopIn(80);
         }
 
         /// <summary>Remonta o conteúdo (ex.: trocou de aba) e ajusta o tamanho da ilha.</summary>
@@ -920,8 +919,7 @@ public sealed class MenuBarWindow : Window
             var size = _w._island.DesiredSize;
             var width = Math.Min(IslandMaxWidth, Math.Max(560, size.Width + 24));
             var height = Math.Min(IslandMaxHeight, size.Height + 4);
-            _w._bar.CornerRadius = ExpandedCorners;
-            _w.ResizeIsland(width, height, expand: true);
+            _w.ResizeIsland(width, height, expand: true, ExpandedCorners.BottomLeft);
         }
 
         public void Refresh()
@@ -945,8 +943,7 @@ public sealed class MenuBarWindow : Window
                 _w._detail.Content = null;
                 _w._compact.Visibility = Visibility.Visible;
                 _w._compact.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 200, null, 120));
-                _w._bar.CornerRadius = CompactCorners;
-                _w.ResizeIsland(_w.CompactWidth(), BarHeight, expand: false);
+                _w.ResizeIsland(_w.CompactWidth(), BarHeight, expand: false, CompactCorners.BottomLeft);
             };
             _w._detail.BeginAnimation(UIElement.OpacityProperty, fade);
         }
@@ -1021,16 +1018,91 @@ public sealed class MenuBarWindow : Window
         return Math.Max(200, _left.DesiredSize.Width + _right.DesiredSize.Width + 24 + 20);
     }
 
-    private void ResizeIsland(double width, double height, bool expand)
+    private Spring? _shape;
+
+    /// <summary>
+    /// Muda o formato da ilha com uma mola de verdade, como a Dynamic Island: ao abrir passa um
+    /// pouquinho do tamanho e volta; ao fechar encolhe firme de volta à pílula. Se mudar de ideia no
+    /// meio (mouse saiu e voltou), a mola continua de onde está, sem recomeçar.
+    /// </summary>
+    private void ResizeIsland(double width, double height, bool expand, double radius)
     {
-        System.Windows.Media.Animation.IEasingFunction ease = expand
-            ? new System.Windows.Media.Animation.BackEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut, Amplitude = 0.25 }
-            : new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
-        var ms = expand ? 380 : 260;
-        if (double.IsNaN(_bar.Width)) _bar.Width = _bar.ActualWidth > 0 ? _bar.ActualWidth : width;
-        if (double.IsNaN(_bar.Height)) _bar.Height = _bar.ActualHeight > 0 ? _bar.ActualHeight : height;
-        _bar.BeginAnimation(WidthProperty, Anim.To(width, ms, ease));
-        _bar.BeginAnimation(HeightProperty, Anim.To(height, ms, ease));
+        if (_shape is null)
+        {
+            _bar.BeginAnimation(WidthProperty, null);
+            _bar.BeginAnimation(HeightProperty, null);
+            var w0 = !double.IsNaN(_bar.Width) ? _bar.Width : _bar.ActualWidth > 0 ? _bar.ActualWidth : width;
+            var h0 = !double.IsNaN(_bar.Height) ? _bar.Height : _bar.ActualHeight > 0 ? _bar.ActualHeight : height;
+            _shape = new Spring(3, v =>
+            {
+                _bar.Width = Math.Max(1, v[0]);
+                _bar.Height = Math.Max(1, v[1]);
+                var r = Math.Clamp(v[2], 0, Math.Max(0, Math.Min(v[0], v[1]) / 2));
+                _bar.CornerRadius = new CornerRadius(0, 0, r, r);
+            });
+            _shape.Snap(w0, h0, _bar.CornerRadius.BottomLeft);
+        }
+        if (expand) _shape.To(0.46, 0.7, null, width, height, radius);
+        else _shape.To(0.36, 0.92, null, width, height, radius);
+    }
+
+    /// <summary>O conteúdo "nasce" de dentro da ilha: aparece crescendo um pouco, com fade.</summary>
+    private void PopIn(double delayMs)
+    {
+        var scale = new ScaleTransform(0.92, 0.92);
+        _detail.RenderTransformOrigin = new Point(0.5, 0);
+        _detail.RenderTransform = scale;
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim.To(1, 340, Anim.EaseOut, delayMs));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.To(1, 340, Anim.EaseOut, delayMs));
+        _detail.BeginAnimation(UIElement.OpacityProperty, Anim.FromTo(0, 1, 220, null, delayMs));
+    }
+
+    // ---------- Painel do assistente sai da ilha ----------
+
+    /// <summary>Onde a ilha está agora na tela (DIPs), se estiver à vista.</summary>
+    public static Rect? VisibleIslandRect
+    {
+        get
+        {
+            var w = Current;
+            if (w is null || !w.IsVisible || w._hidden || w._bar.ActualWidth <= 0) return null;
+            var bw = w._bar.ActualWidth;
+            return new Rect(w.Left + (w.Width - bw) / 2, w.Top + w._slide.Y, bw, w._bar.ActualHeight);
+        }
+    }
+
+    /// <summary>Onde fica a pílula fechada (DIPs): é para lá que o painel volta ao fechar.</summary>
+    public static Rect? PillRect
+    {
+        get
+        {
+            var w = Current;
+            if (w is null || !w.IsVisible) return null;
+            var cw = w.CompactWidth();
+            return new Rect(w.Left + (w.Width - cw) / 2, w.Top, cw, BarHeight);
+        }
+    }
+
+    /// <summary>O painel do assistente "virou" a ilha: ela sai de cena por baixo dele.</summary>
+    public static void HandOffToPanel()
+    {
+        var w = Current;
+        if (w is null) return;
+        w._wantHideSince = DateTime.MaxValue;
+        w.Reveal(false);
+    }
+
+    /// <summary>O painel encolheu de volta até a pílula: a ilha reaparece ali mesmo, sem deslizar.</summary>
+    public static void TakeBackFromPanel()
+    {
+        var w = Current;
+        if (w is null || !w._hidden) return;
+        w._hidden = false;
+        w._slide.BeginAnimation(TranslateTransform.YProperty, null);
+        w._slide.Y = 0;
+        if (w._topBarShown) w._topBar.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 220));
+        w.BringAvatarToFront();
+        w._popover.GoRest();
     }
 
     /// <summary>Pílula fechada acompanha os itens que aparecem/somem (timer, música).</summary>
@@ -1041,7 +1113,7 @@ public sealed class MenuBarWindow : Window
         {
             if (_popover.IsExpanded) return;
             var w = CompactWidth();
-            if (Math.Abs(w - _bar.ActualWidth) > 1) ResizeIsland(w, BarHeight, expand: false);
+            if (Math.Abs(w - _bar.ActualWidth) > 1) ResizeIsland(w, BarHeight, expand: false, CompactCorners.BottomLeft);
         }), DispatcherPriority.Loaded);
     }
 

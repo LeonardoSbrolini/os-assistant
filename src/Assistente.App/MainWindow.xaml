@@ -42,9 +42,7 @@
         <!-- Sombra do painel (separada e em cache para não pesar) -->
         <Border x:Name="PanelShadow" Visibility="{Binding Visibility, ElementName=ExpandedPanel}"
                 Margin="{Binding Margin, ElementName=ExpandedPanel}" CornerRadius="26" Background="{DynamicResource PanelBrush}"
-                RenderTransformOrigin="{Binding RenderTransformOrigin, ElementName=ExpandedPanel}"
-                RenderTransform="{Binding RenderTransform, ElementName=ExpandedPanel}"
-                Opacity="{Binding Opacity, ElementName=ExpandedPanel}" IsHitTestVisible="False">
+                IsHitTestVisible="False">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Opacity="0.55" />
             </Border.Effect>
