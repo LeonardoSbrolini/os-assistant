@@ -48,6 +48,10 @@ As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferr
 - À direita: mini player quando há música tocando (capa, nome, anterior / tocar-pausar / próxima). Some depois de 10 min pausado.
 - À esquerda: timer ou cronômetro rodando, com pausar/continuar e parar. Quando o timer acaba: recomeçar ou silenciar o alarme.
 
+**Tela personalizada** (Configurações › Tela personalizada): esconde os ícones da área de trabalho e mostra um widget grande no centro da tela (na tela escolhida ou em todas) com atalhos de apps, pastas e sites em ícones grandes, relógio e data. Fundo e atalhos podem ser *Liquid glass* (o papel de parede desfocado por trás) ou *Sólido*. Arraste apps, pastas ou links para o widget; botão direito em um atalho para renomear, mover ou remover.
+
+**Atualizações**: ao buscar atualizações, uma janelinha mostra o download com barra, porcentagem, tamanho, velocidade e tempo restante.
+
 **Papel de parede** (Configurações › Papel de parede): uma imagem para todas as telas ou uma para cada tela, ajuste (preencher, ajustar, estender…) e degradês estilo Mac. Com **Manter** ligado, se a empresa (política de grupo do AD) ou outro programa trocar o fundo, o Assistente coloca o seu de volta: ao abrir, ao desbloquear, quando o Windows avisa da troca e a cada 30 s.
 
 **Configurações** (botão ⚙ ou ícone da bandeja) abrem em **tela cheia** na tela onde está o mouse (ou em janela, escolha em Geral); a bolinha verde, F11 ou dois cliques no topo alternam na hora. Nelas: iniciar com o Windows, temas, cor de destaque, transparência do painel e das janelas, tamanho, animações, **10 avatares originais** para a alça, posição, serviço de IA e atualizações.

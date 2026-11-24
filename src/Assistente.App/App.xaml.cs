@@ -42,6 +42,7 @@ public partial class App : Application
         Corners.CornerMenu.Apply(settings);
         Radial.RadialHook.Apply(settings.RadialMenu);
         WallpaperService.Start(settings);
+        Desktop.DesktopWidget.Apply(settings);
 
         if (settings.ApplyMacTaskbarOnStart)
         {

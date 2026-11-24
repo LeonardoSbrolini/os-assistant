@@ -50,6 +50,7 @@ public sealed class SettingsWindow : Window
         ["Dock"] = "A barra de aplicativos que aparece embaixo.",
         ["Barra de tarefas"] = "Como a barra do Windows se comporta.",
         ["Aparência"] = "Cores, tema e transparência.",
+        ["Tela personalizada"] = "Esconda os ícones da área de trabalho e coloque atalhos grandes e bonitos no meio da tela.",
         ["Papel de parede"] = "O fundo da área de trabalho, em cada tela. Fica mesmo se a empresa trocar.",
         ["Avatar"] = "O personagem do Assistente.",
         ["Posição"] = "Onde o Assistente fica na tela.",
@@ -108,6 +109,7 @@ public sealed class SettingsWindow : Window
         _pages["Barra de tarefas"] = TaskbarPage;
         _pages["Aparência"] = AppearancePage;
         _pages["Papel de parede"] = WallpaperPage;
+        _pages["Tela personalizada"] = DesktopPage;
         _pages["Avatar"] = AvatarPage;
         _pages["Posição"] = PositionPage;
         _pages["Chat IA"] = ChatPage;
@@ -122,6 +124,7 @@ public sealed class SettingsWindow : Window
         NavSection("Visual");
         NavRow("Aparência", "");
         NavRow("Papel de parede", "\uEB9F");
+        NavRow("Tela personalizada", "\uE80A");
         NavRow("Avatar", "");
         NavRow("Posição", "");
         NavRow("Tela de bloqueio", "\uE72E");
@@ -990,6 +993,140 @@ public sealed class SettingsWindow : Window
             Ui.Card("Parar", "", Ui.Caption("O Windows (ou a empresa) volta a decidir o papel de parede."), Ui.Inline(stop)));
     }
 
+    private FrameworkElement DesktopPage()
+    {
+        void Refresh()
+        {
+            _settings.Save();
+            Desktop.DesktopWidget.Refresh();
+        }
+
+        void Reapply()
+        {
+            _settings.Save();
+            Desktop.DesktopWidget.Apply(_settings);
+        }
+
+        var hideIcons = ToggleRow("Esconder os ícones da área de trabalho",
+            "Deixa a área de trabalho limpa, só com o papel de parede e o widget. Os arquivos continuam na pasta Área de Trabalho.",
+            _settings.DesktopHideIcons, v =>
+            {
+                _settings.DesktopHideIcons = v;
+                _settings.Save();
+                Desktop.DesktopIcons.SetVisible(!v);
+            });
+        var widget = ToggleRow("Widget de atalhos no centro da tela",
+            "Um painel grande com seus apps, pastas e sites. Fica atrás das janelas, como parte da área de trabalho.",
+            _settings.DesktopWidgetEnabled, v =>
+            {
+                _settings.DesktopWidgetEnabled = v;
+                Reapply();
+            }, last: true);
+
+        // Em qual tela
+        var screens = new StackPanel();
+        void RenderScreens()
+        {
+            screens.Children.Clear();
+            var options = new List<(string Key, string Label)> { ("principal", "Tela principal") };
+            var list = Desktop.DesktopWidget.Screens();
+            if (list.Count > 1)
+            {
+                options.AddRange(list.Select(s => (s.Device, s.Label)));
+                options.Add(("todas", "Todas as telas"));
+            }
+            foreach (var (key, label) in options)
+            {
+                var radio = new RadioButton { GroupName = "deskScreen", Content = label, FontSize = 14, IsChecked = _settings.DesktopWidgetScreen == key, Margin = new Thickness(0, 4, 0, 4) };
+                var k = key;
+                radio.Checked += (_, _) =>
+                {
+                    if (_settings.DesktopWidgetScreen == k) return;
+                    _settings.DesktopWidgetScreen = k;
+                    Reapply();
+                };
+                screens.Children.Add(radio);
+            }
+        }
+        RenderScreens();
+
+        FrameworkElement StyleChoice(string group, string current, Action<string> set)
+        {
+            var row = new WrapPanel();
+            foreach (var (key, title, caption) in new[]
+            {
+                ("vidro", "Liquid glass", "Transparente e desfocado, mostra o papel de parede por trás."),
+                ("solido", "Sólido", "Escuro e firme, destaca bem os ícones."),
+            })
+            {
+                var text = new StackPanel { Width = 230 };
+                text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
+                text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
+                var radio = new RadioButton { GroupName = group, IsChecked = current == key, Content = text, Margin = new Thickness(0, 4, 24, 4) };
+                var k = key;
+                radio.Checked += (_, _) => { set(k); Refresh(); };
+                row.Children.Add(radio);
+            }
+            return row;
+        }
+        var background = Ui.Field("Fundo do widget", StyleChoice("deskBg", _settings.DesktopWidgetBackground, v => _settings.DesktopWidgetBackground = v));
+        var tiles = Ui.Field("Atalhos", StyleChoice("deskTiles", _settings.DesktopWidgetTiles, v => _settings.DesktopWidgetTiles = v));
+
+        var size = SliderRow("Tamanho dos atalhos", 64, 150, _settings.DesktopWidgetTileSize,
+            v => $"{v:0} px", v => { _settings.DesktopWidgetTileSize = Math.Round(v); Desktop.DesktopWidget.Refresh(); });
+        var columns = SliderRow("Atalhos por linha", 3, 10, _settings.DesktopWidgetColumns,
+            v => $"{Math.Round(v):0}", v => { _settings.DesktopWidgetColumns = (int)Math.Round(v); Desktop.DesktopWidget.Refresh(); });
+        var clock = ToggleRow("Relógio e data grandes", "Aparecem em cima dos atalhos.",
+            _settings.DesktopWidgetClock, v => { _settings.DesktopWidgetClock = v; Refresh(); }, last: true);
+
+        // Lista de atalhos
+        var items = new StackPanel();
+        void RenderItems()
+        {
+            items.Children.Clear();
+            var list = _settings.DesktopShortcuts ?? new List<DesktopShortcut>();
+            if (list.Count == 0)
+            {
+                items.Children.Add(Ui.Caption("Nenhum atalho ainda. Use os botões abaixo ou arraste apps, pastas e links direto para o widget."));
+                return;
+            }
+            foreach (var item in list)
+            {
+                var kind = item.Kind switch { "pasta" => "Pasta", "site" => "Site", _ => "App" };
+                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                text.Children.Add(new TextBlock { Text = item.Name, FontSize = 14, FontWeight = FontWeights.Medium, TextTrimming = TextTrimming.CharacterEllipsis });
+                text.Children.Add(new TextBlock { Text = $"{kind} · {item.Target}", FontSize = 12, Foreground = Muted, TextTrimming = TextTrimming.CharacterEllipsis });
+                var it = item;
+                var remove = Ui.Btn("Remover", () =>
+                {
+                    _settings.DesktopShortcuts?.Remove(it);
+                    Refresh();
+                    RenderItems();
+                });
+                remove.VerticalAlignment = VerticalAlignment.Center;
+                remove.Margin = new Thickness(12, 0, 0, 0);
+                var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+                DockPanel.SetDock(remove, System.Windows.Controls.Dock.Right);
+                row.Children.Add(remove);
+                row.Children.Add(text);
+                items.Children.Add(row);
+            }
+        }
+        RenderItems();
+        var addApp = Ui.Btn("+ Aplicativo", () => { Desktop.DesktopWidget.AddAppDialog(_settings); RenderItems(); }, primary: true);
+        var addFolder = Ui.Btn("+ Pasta", () => { Desktop.DesktopWidget.AddFolderDialog(_settings); RenderItems(); });
+        var addSite = Ui.Btn("+ Site", () => { Desktop.DesktopWidget.AddSiteDialog(_settings); RenderItems(); });
+
+        return Page("Tela personalizada",
+            Ui.Card("Área de trabalho", "\uE7F4", hideIcons, widget),
+            Ui.Card("Em qual tela", "\uE7F4", screens,
+                Ui.Caption("Com duas telas, escolha uma delas ou as duas.")),
+            Ui.Card("Estilo", "\uE790", background, tiles),
+            Ui.Card("Tamanho", "", size, columns, clock),
+            Ui.Card("Atalhos", "\uE71B", items, Ui.Inline(addApp, addFolder, addSite),
+                Ui.Caption("No próprio widget: clique com o botão direito em um atalho para renomear, mudar de lugar ou remover.")));
+    }
+
     /// <summary>Miniatura leve da imagem (não trava o arquivo).</summary>
     private static ImageSource? LoadThumb(string? path)
     {
@@ -1440,7 +1577,7 @@ public sealed class SettingsWindow : Window
             status.Text = "Procurando atualizações…";
             try
             {
-                status.Text = await UpdateService.Instance.CheckAsync(manual: false);
+                status.Text = await UpdateService.Instance.CheckAsync(manual: false, showProgress: true);
             }
             finally
             {

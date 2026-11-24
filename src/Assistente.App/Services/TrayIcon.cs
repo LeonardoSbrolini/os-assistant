@@ -25,6 +25,16 @@ public sealed class TrayIcon : IDisposable
         menu.Opening += (_, _) => startup.Checked = StartupManager.IsEnabled; // reflete mudanças feitas nas configurações
         menu.Items.Add(startup);
 
+        var desk = new ToolStripMenuItem("Tela personalizada (atalhos no centro)") { CheckOnClick = true };
+        desk.Click += (_, _) =>
+        {
+            settings.DesktopWidgetEnabled = desk.Checked;
+            settings.Save();
+            Desktop.DesktopWidget.Apply(settings);
+        };
+        menu.Opening += (_, _) => desk.Checked = settings.DesktopWidgetEnabled;
+        menu.Items.Add(desk);
+
         var dock = new ToolStripMenuItem("Dock estilo Mac") { CheckOnClick = true };
         dock.Click += (_, _) =>
         {
@@ -38,7 +48,7 @@ public sealed class TrayIcon : IDisposable
 
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Verificar atualizações", null,
-            async (_, _) => await UpdateService.Instance.CheckAsync(manual: true)));
+            async (_, _) => await UpdateService.Instance.CheckAsync(manual: true, showProgress: true)));
         menu.Items.Add(new ToolStripMenuItem($"Versão {UpdateService.CurrentVersionText}") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Sair", null, (_, _) => System.Windows.Application.Current.Shutdown()));
