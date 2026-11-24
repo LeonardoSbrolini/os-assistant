@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -31,6 +32,15 @@ public sealed class SettingsWindow : Window
     private readonly Dictionary<string, FrameworkElement> _built = new();
     private string? _current;
 
+    // Tela cheia / janela
+    private const double WindowedWidth = 860;
+    private const double WindowedHeight = 620;
+    private const double ShadowMargin = 14;
+    private bool _fullscreen;
+    private Border? _frame;
+    private Border? _sidebar;
+    private Border? _zoomDot;
+
     private static readonly Dictionary<string, string> Subtitles = new()
     {
         ["Geral"] = "O básico: iniciar com o Windows e o tempo para recolher.",
@@ -40,6 +50,7 @@ public sealed class SettingsWindow : Window
         ["Dock"] = "A barra de aplicativos que aparece embaixo.",
         ["Barra de tarefas"] = "Como a barra do Windows se comporta.",
         ["Aparência"] = "Cores, tema e transparência.",
+        ["Papel de parede"] = "O fundo da área de trabalho, em cada tela. Fica mesmo se a empresa trocar.",
         ["Avatar"] = "O personagem do Assistente.",
         ["Posição"] = "Onde o Assistente fica na tela.",
         ["Chat IA"] = "Conecte uma IA para conversar com o Assistente.",
@@ -78,9 +89,7 @@ public sealed class SettingsWindow : Window
         _settings = _main.Settings;
 
         Title = "Configurações do Assistente";
-        Width = 860;
-        Height = 620;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        WindowStartupLocation = WindowStartupLocation.Manual;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -98,6 +107,7 @@ public sealed class SettingsWindow : Window
         _pages["Dock"] = DockPage;
         _pages["Barra de tarefas"] = TaskbarPage;
         _pages["Aparência"] = AppearancePage;
+        _pages["Papel de parede"] = WallpaperPage;
         _pages["Avatar"] = AvatarPage;
         _pages["Posição"] = PositionPage;
         _pages["Chat IA"] = ChatPage;
@@ -111,6 +121,7 @@ public sealed class SettingsWindow : Window
         NavRow("Barra de tarefas", "");
         NavSection("Visual");
         NavRow("Aparência", "");
+        NavRow("Papel de parede", "\uEB9F");
         NavRow("Avatar", "");
         NavRow("Posição", "");
         NavRow("Tela de bloqueio", "\uE72E");
@@ -120,6 +131,8 @@ public sealed class SettingsWindow : Window
 
         Content = BuildChrome();
         ShowPage("Geral");
+        // Abre na tela onde está o mouse, no modo escolhido em Geral.
+        SetMode(_settings.SettingsFullscreen, ScreenUnderCursor());
 
         Loaded += (_, _) =>
         {
@@ -134,6 +147,7 @@ public sealed class SettingsWindow : Window
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) Close();
+            else if (e.Key == Key.F11) ToggleFullscreen();
         };
     }
 
@@ -225,6 +239,8 @@ public sealed class SettingsWindow : Window
         var dots = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 18, 0, 6), Background = Brushes.Transparent };
         dots.Children.Add(Dot(Color.FromRgb(0xFF, 0x5F, 0x57), "Fechar", Close));
         dots.Children.Add(Dot(Color.FromRgb(0xFE, 0xBC, 0x2E), "Minimizar", () => WindowState = WindowState.Minimized));
+        _zoomDot = Dot(Color.FromRgb(0x28, 0xC8, 0x40), "Tela cheia (F11)", ToggleFullscreen);
+        dots.Children.Add(_zoomDot);
 
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 14, 0, 2) };
         var logo = new TextBlock
@@ -247,10 +263,10 @@ public sealed class SettingsWindow : Window
         sideStack.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _nav });
         sideStack.MouseLeftButtonDown += (_, e) =>
         {
-            if (e.ButtonState == MouseButtonState.Pressed && e.OriginalSource is not TextBlock) DragMove();
+            if (e.ButtonState == MouseButtonState.Pressed && e.OriginalSource is not TextBlock && !_fullscreen) DragMove();
         };
 
-        var sidebar = new Border
+        var sidebar = _sidebar = new Border
         {
             Width = 214,
             Background = SidebarBlack,
@@ -262,7 +278,9 @@ public sealed class SettingsWindow : Window
         var grip = new Border { Height = 22, Background = Brushes.Transparent };
         grip.MouseLeftButtonDown += (_, e) =>
         {
-            if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+            // Dois cliques no topo alternam entre tela cheia e janela (como no Mac).
+            if (e.ClickCount == 2) ToggleFullscreen();
+            else if (e.ButtonState == MouseButtonState.Pressed && !_fullscreen) DragMove();
         };
 
         var right = new DockPanel();
@@ -276,7 +294,7 @@ public sealed class SettingsWindow : Window
         body.Children.Add(sidebar);
         body.Children.Add(right);
 
-        return new Border
+        return _frame = new Border
         {
             CornerRadius = new CornerRadius(26),
             Background = WindowBlack,
@@ -286,6 +304,67 @@ public sealed class SettingsWindow : Window
             Margin = new Thickness(14), // espaço para a sombra
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 26, ShadowDepth = 4, Opacity = 0.55 },
         };
+    }
+
+    // ---------- Tela cheia / janela ----------
+
+    /// <summary>Área útil (sem a barra de tarefas) da tela onde está o mouse, em pixels.</summary>
+    private static System.Drawing.Rectangle ScreenUnderCursor() =>
+        System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Cursor.Position).WorkingArea;
+
+    /// <summary>Área útil da tela onde a janela está agora (ou a do mouse, antes de abrir).</summary>
+    private System.Drawing.Rectangle CurrentScreen()
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        return hwnd == IntPtr.Zero ? ScreenUnderCursor() : System.Windows.Forms.Screen.FromHandle(hwnd).WorkingArea;
+    }
+
+    private void ToggleFullscreen() => SetMode(!_fullscreen, CurrentScreen());
+
+    /// <summary>Tela cheia ocupa toda a tela (menos a barra de tarefas); janela fica centralizada nela.</summary>
+    private void SetMode(bool fullscreen, System.Drawing.Rectangle area)
+    {
+        _fullscreen = fullscreen;
+        if (WindowState != WindowState.Normal) WindowState = WindowState.Normal;
+
+        // Pixels → unidades do WPF (mesma escala que o resto do app usa).
+        var dpi = VisualTreeHelper.GetDpi(_main);
+        var x = area.Left / dpi.DpiScaleX;
+        var y = area.Top / dpi.DpiScaleY;
+        var w = area.Width / dpi.DpiScaleX;
+        var h = area.Height / dpi.DpiScaleY;
+
+        if (_frame is not null)
+        {
+            _frame.CornerRadius = new CornerRadius(fullscreen ? 0 : 26);
+            _frame.Margin = new Thickness(fullscreen ? 0 : ShadowMargin);
+            _frame.BorderThickness = new Thickness(fullscreen ? 0 : 1);
+            _frame.Effect = fullscreen ? null : new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 26, ShadowDepth = 4, Opacity = 0.55 };
+        }
+        if (_sidebar is not null)
+        {
+            _sidebar.CornerRadius = new CornerRadius(fullscreen ? 0 : 25, 0, 0, fullscreen ? 0 : 25);
+            _sidebar.Width = fullscreen ? 250 : 214;
+        }
+        // Em tela cheia o conteúdo fica centralizado e com largura confortável para ler.
+        _host.MaxWidth = fullscreen ? 1000 : double.PositiveInfinity;
+        _host.Margin = fullscreen ? new Thickness(48, 12, 24, 20) : new Thickness(28, 0, 4, 14);
+        if (_zoomDot is not null) _zoomDot.ToolTip = fullscreen ? "Voltar para janela (F11)" : "Tela cheia (F11)";
+
+        if (fullscreen)
+        {
+            Left = x;
+            Top = y;
+            Width = w;
+            Height = h;
+        }
+        else
+        {
+            Width = Math.Min(WindowedWidth, w);
+            Height = Math.Min(WindowedHeight, h);
+            Left = x + (w - Width) / 2;
+            Top = y + (h - Height) / 2;
+        }
     }
 
     private void ShowPage(string page)
@@ -356,8 +435,32 @@ public sealed class SettingsWindow : Window
         var time = ToggleRow("Widget de timer e cronômetro", "Ao lado do avatar, para usar sem abrir o Assistente.",
             _settings.TimeWidget, v => { _settings.TimeWidget = v; _settings.Save(); Widgets.WidgetManager.Refresh(); }, last: true);
 
+        var modes = new StackPanel();
+        foreach (var (full, title, caption) in new[]
+        {
+            (true, "Tela cheia", "Ocupa a tela inteira onde está o mouse (a barra do Windows continua à vista)."),
+            (false, "Janela", "Uma janela no meio da tela, que dá para arrastar."),
+        })
+        {
+            var radio = new RadioButton { GroupName = "settingsMode", IsChecked = _settings.SettingsFullscreen == full, Margin = new Thickness(0, 4, 0, 4) };
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Medium });
+            text.Children.Add(new TextBlock { Text = caption, FontSize = 12, Foreground = Muted, TextWrapping = TextWrapping.Wrap });
+            radio.Content = text;
+            var f = full;
+            radio.Checked += (_, _) =>
+            {
+                _settings.SettingsFullscreen = f;
+                _settings.Save();
+                if (_fullscreen != f) SetMode(f, CurrentScreen());
+            };
+            modes.Children.Add(radio);
+        }
+
         return Page("Geral",
             Ui.Card("Inicialização", "", startup),
+            Ui.Card("Configurações abrem em", "\uE740", modes,
+                Ui.Caption("Para trocar na hora: bolinha verde no canto de cima, F11 ou dois cliques no topo.")),
             Ui.Card("Comportamento", "", delay),
             Ui.Card("Avatar e mini widgets", "", avatarHide, music, time));
     }
@@ -619,6 +722,294 @@ public sealed class SettingsWindow : Window
             Ui.Card("Para ficar ainda mais clean", "\uE946",
                 Ui.Caption("Nas configurações do Windows, em \"Status da tela de bloqueio\", escolha \"Nenhum\" para tirar clima e widgets, e desligue \"Mostrar a imagem de fundo na tela de entrada\" se quiser a tela de senha lisa. O relógio e a posição dos textos são do próprio Windows e não dá para mudar."),
                 Ui.Inline(windowsSettings)));
+    }
+
+    private FrameworkElement WallpaperPage()
+    {
+        var status = Ui.Caption("");
+        void Say(string text)
+        {
+            status.Text = text;
+            Anim.Pop(status);
+        }
+
+        string? Pick()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Escolha o papel de parede",
+                Filter = "Imagens|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.jxr;*.webp|Todos os arquivos|*.*",
+            };
+            return dialog.ShowDialog(this) == true ? dialog.FileName : null;
+        }
+
+        var screens = new WrapPanel();
+        void Render()
+        {
+            screens.Children.Clear();
+            var list = WallpaperService.CurrentMonitors();
+            if (list.Count == 0)
+            {
+                screens.Children.Add(Ui.Caption("Não deu para ler as telas deste Windows. Use \"Mesma imagem em todas as telas\"."));
+                return;
+            }
+            foreach (var m in list) screens.Children.Add(ScreenTile(m));
+        }
+
+        void ApplyNow(string ok)
+        {
+            try
+            {
+                _settings.Save();
+                WallpaperService.Apply(_settings);
+                WallpaperService.Cleanup(_settings);
+                Say(ok);
+            }
+            catch (Exception ex)
+            {
+                Say("Não deu certo: " + ex.Message);
+            }
+            Render();
+        }
+
+        void UseForAll(string source, string ok)
+        {
+            try
+            {
+                _settings.WallpaperAll = WallpaperService.Import(source);
+                _settings.WallpaperMonitors = null;
+            }
+            catch (Exception ex)
+            {
+                Say("Não deu para usar essa imagem: " + ex.Message);
+                return;
+            }
+            ApplyNow(ok);
+        }
+
+        FrameworkElement ScreenTile(WallpaperService.Screen m)
+        {
+            var own = _settings.WallpaperMonitors is { } map && map.ContainsKey(m.Id);
+            var shown = m.Current;
+            const double tileW = 220;
+            var tileH = Math.Round(tileW * m.Height / Math.Max(1.0, m.Width));
+            tileH = Math.Clamp(tileH, 90, 180);
+
+            var preview = new Border
+            {
+                Width = tileW,
+                Height = tileH,
+                CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(2),
+                BorderBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF))),
+                Background = Frozen(new SolidColorBrush(Color.FromRgb(0x1C, 0x1C, 0x20))),
+                ClipToBounds = true,
+            };
+            if (LoadThumb(shown) is { } img)
+                preview.Background = new ImageBrush(img) { Stretch = Stretch.UniformToFill };
+            else
+                preview.Child = new TextBlock { Text = "Sem imagem", Foreground = Muted, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+
+            var title = new TextBlock
+            {
+                Text = $"Tela {m.Index}{(m.Primary ? " · principal" : "")}",
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+            var sub = Ui.Caption($"{m.Width}×{m.Height}{(own ? " · imagem própria" : "")}");
+
+            var choose = Ui.Btn("Escolher imagem…", () =>
+            {
+                if (Pick() is not { } file) return;
+                try
+                {
+                    _settings.WallpaperMonitors ??= new Dictionary<string, string>();
+                    _settings.WallpaperMonitors[m.Id] = WallpaperService.Import(file);
+                    // Quem não tinha imagem própria fica com a que está agora (para não mudar sozinha).
+                    if (string.IsNullOrEmpty(_settings.WallpaperAll))
+                        foreach (var other in WallpaperService.CurrentMonitors())
+                            if (other.Id != m.Id && !_settings.WallpaperMonitors.ContainsKey(other.Id) && File.Exists(other.Current))
+                                _settings.WallpaperMonitors[other.Id] = WallpaperService.Import(other.Current!);
+                }
+                catch (Exception ex)
+                {
+                    Say("Não deu para usar essa imagem: " + ex.Message);
+                    return;
+                }
+                ApplyNow($"Pronto! Papel de parede da tela {m.Index} trocado.");
+            });
+
+            var actions = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            actions.Children.Add(choose);
+            if (own && !string.IsNullOrEmpty(_settings.WallpaperAll))
+            {
+                var same = Ui.Btn("Igual às outras", () =>
+                {
+                    _settings.WallpaperMonitors!.Remove(m.Id);
+                    ApplyNow($"A tela {m.Index} voltou a usar a mesma imagem das outras.");
+                });
+                same.Margin = new Thickness(8, 0, 0, 0);
+                actions.Children.Add(same);
+            }
+
+            var stack = new StackPanel { Width = tileW, Margin = new Thickness(0, 0, 22, 12) };
+            stack.Children.Add(preview);
+            stack.Children.Add(title);
+            stack.Children.Add(sub);
+            stack.Children.Add(actions);
+            return stack;
+        }
+
+        Render();
+
+        var all = Ui.Btn("Mesma imagem em todas as telas…", () =>
+        {
+            if (Pick() is { } file) UseForAll(file, "Pronto! Papel de parede trocado em todas as telas.");
+        }, primary: true);
+        var keepCurrent = Ui.Btn("Guardar o que está agora", () =>
+        {
+            try
+            {
+                var map = new Dictionary<string, string>();
+                foreach (var m in WallpaperService.CurrentMonitors())
+                    if (File.Exists(m.Current)) map[m.Id] = m.Current!;
+                if (map.Count == 0)
+                {
+                    Say("Não achei o arquivo do papel de parede atual. Use \"Escolher imagem…\".");
+                    return;
+                }
+                var distinct = map.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (distinct.Count == 1)
+                {
+                    _settings.WallpaperAll = WallpaperService.Import(distinct[0]);
+                    _settings.WallpaperMonitors = null;
+                }
+                else
+                {
+                    _settings.WallpaperAll = null;
+                    _settings.WallpaperMonitors = map.ToDictionary(kv => kv.Key, kv => WallpaperService.Import(kv.Value));
+                }
+                ApplyNow("Guardado! Se a empresa trocar, o Assistente coloca este de volta.");
+            }
+            catch (Exception ex)
+            {
+                Say("Não deu certo: " + ex.Message);
+            }
+        });
+        var refresh = Ui.Btn("Atualizar", Render);
+
+        // Degradês estilo Mac (os mesmos da tela de bloqueio).
+        var swatches = new WrapPanel { Margin = new Thickness(0, 4, 0, 4) };
+        foreach (var (key, name, colors) in LockScreenStyle.Styles)
+        {
+            var swatch = new Border
+            {
+                Width = 128,
+                Height = 76,
+                CornerRadius = new CornerRadius(12),
+                Margin = new Thickness(0, 0, 10, 10),
+                Cursor = Cursors.Hand,
+                Background = new LinearGradientBrush(new GradientStopCollection
+                {
+                    new GradientStop(colors[0], 0), new GradientStop(colors[1], 0.55), new GradientStop(colors[2], 0.8), new GradientStop(colors[3], 1),
+                }, 35),
+                Child = new TextBlock { Text = name, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 0, 0, 8), VerticalAlignment = VerticalAlignment.Bottom },
+                ToolTip = "Usar \"" + name + "\" em todas as telas",
+            };
+            var k = key;
+            var n = name;
+            swatch.MouseLeftButtonUp += (_, _) =>
+            {
+                try
+                {
+                    UseForAll(LockScreenStyle.RenderWallpaper(k), $"Pronto! \"{n}\" em todas as telas.");
+                }
+                catch (Exception ex) { Say("Não deu certo: " + ex.Message); }
+            };
+            swatches.Children.Add(swatch);
+        }
+
+        var fits = new WrapPanel();
+        foreach (var (key, name, _) in WallpaperService.Fits)
+        {
+            var radio = new RadioButton { GroupName = "wallFit", Content = name, IsChecked = _settings.WallpaperFit == key, Margin = new Thickness(0, 4, 18, 4) };
+            var k = key;
+            radio.Checked += (_, _) =>
+            {
+                if (_settings.WallpaperFit == k) return;
+                _settings.WallpaperFit = k;
+                if (WallpaperService.HasChoice(_settings)) ApplyNow("Ajuste aplicado.");
+                else _settings.Save();
+            };
+            fits.Children.Add(radio);
+        }
+
+        var keepStatus = Ui.Caption("");
+        void UpdateKeepStatus()
+        {
+            var text = !WallpaperService.HasChoice(_settings)
+                ? "Escolha uma imagem acima para o Assistente cuidar dela."
+                : !_settings.WallpaperKeep
+                    ? "Desligado: se a empresa trocar, o papel de parede fica o dela."
+                    : WallpaperService.RestoredCount > 0
+                        ? $"Ligado. Desde que o Assistente abriu, colocou o seu de volta {WallpaperService.RestoredCount} {(WallpaperService.RestoredCount == 1 ? "vez" : "vezes")} (última às {WallpaperService.LastRestored:HH:mm})."
+                        : "Ligado. Até agora ninguém trocou o seu papel de parede.";
+            if (WallpaperService.PolicyActive())
+                text += "\nEste computador tem um papel de parede definido pela empresa: o Assistente recoloca o seu toda vez que ela trocar.";
+            keepStatus.Text = text;
+        }
+        UpdateKeepStatus();
+        var keep = ToggleRow("Manter o meu papel de parede",
+            "Se a empresa (AD) ou outro programa trocar, o Assistente coloca o seu de volta em segundos. Vale também ao ligar o PC e ao desbloquear.",
+            _settings.WallpaperKeep, v =>
+            {
+                _settings.WallpaperKeep = v;
+                _settings.Save();
+                if (v) WallpaperService.Enforce();
+                UpdateKeepStatus();
+            }, last: true);
+
+        var stop = Ui.Btn("Esquecer minha escolha", () =>
+        {
+            _settings.WallpaperAll = null;
+            _settings.WallpaperMonitors = null;
+            _settings.Save();
+            WallpaperService.Cleanup(_settings);
+            UpdateKeepStatus();
+            Render();
+            Say("Pronto: o Assistente não mexe mais no papel de parede.");
+        });
+
+        return Page("Papel de parede",
+            Ui.Card("Suas telas", "", screens, Ui.Inline(all, keepCurrent, refresh), status),
+            Ui.Card("Manter", "", keep, keepStatus),
+            Ui.Card("Estilo Mac", "", swatches),
+            Ui.Card("Ajuste da imagem", "", fits,
+                Ui.Caption("\"Estender nas telas\" espalha uma imagem só pelas duas telas.")),
+            Ui.Card("Parar", "", Ui.Caption("O Windows (ou a empresa) volta a decidir o papel de parede."), Ui.Inline(stop)));
+    }
+
+    /// <summary>Miniatura leve da imagem (não trava o arquivo).</summary>
+    private static ImageSource? LoadThumb(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+        try
+        {
+            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.UriSource = new Uri(path);
+            bmp.DecodePixelWidth = 260;
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bmp.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache;
+            bmp.EndInit();
+            bmp.Freeze();
+            return bmp;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private FrameworkElement AppearancePage()
