@@ -150,6 +150,8 @@ public partial class MainWindow : Window
             _expanded = false;
             _collapsedAt = DateTime.Now;
             ExpandedPanel.Visibility = Visibility.Collapsed;
+            // O painel voltou a ser a pílula: a ilha reaparece exatamente onde ele encolheu.
+            if (_settings.Edge == DockEdge.Top) MenuBar.MenuBarWindow.TakeBackFromPanel();
             Background = Brushes.Transparent;
             // A alça só aparece depois que a janela já encolheu para o tamanho dela
             // (antes aparecia um pedaço azul no canto do painel por um instante).
@@ -170,77 +172,189 @@ public partial class MainWindow : Window
 
     // ---------- Animações ----------
 
-    /// <summary>
-    /// Efeito "gênio": o painel sai do avatar se esticando primeiro no comprimento e depois na
-    /// largura; ao fechar, afunila de volta para dentro do avatar.
-    /// </summary>
+    // Estilo Dynamic Island: o painel não aparece "do nada" — a pílula preta da ilha cresce com
+    // uma mola até virar o painel (passa um pouquinho do tamanho e acomoda) e o conteúdo vai
+    // surgindo de dentro do preto. Ao fechar, encolhe de volta até virar a pílula de novo.
+    // A forma é um recorte (Clip) que muda a cada quadro; o conteúdo do painel não é esticado.
+
+    private Spring? _morph;
+    private readonly RectangleGeometry _panelClip = new();
+    private readonly RectangleGeometry _coverClip = new();
+    private readonly ScaleTransform _panelScale = new();
+    private readonly ScaleTransform _coverScale = new();
+    private Border? _morphCover;
+    private Rect _morphFrom;
+    private Rect _morphFull;
+
+    /// <summary>Preto da ilha (a "tinta" de que o painel nasce).</summary>
+    private static readonly Brush IslandBlack = new SolidColorBrush(Colors.Black);
+
+    private void EnsureMorph()
+    {
+        if (_morph is not null) return;
+        _morphCover = new Border
+        {
+            Background = IslandBlack,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+            Clip = _coverClip,
+            RenderTransform = _coverScale,
+        };
+        ((Grid)Content).Children.Add(_morphCover);
+        _morph = new Spring(5, ApplyMorph);
+    }
+
+    /// <summary>Retângulo (nas coordenadas do painel) de onde o painel sai e para onde volta.</summary>
+    private Rect PillRect(bool opening)
+    {
+        var m = ExpandedPanel.Margin;
+        var originX = Left + m.Left;
+        var originY = Top + m.Top;
+        if (_settings.Edge == DockEdge.Top)
+        {
+            // Ao abrir, sai da ilha do jeito que ela estiver (fechada, um pouco ou toda aberta);
+            // ao fechar, volta para o tamanho da pílula fechada.
+            var island = opening ? MenuBar.MenuBarWindow.VisibleIslandRect ?? MenuBar.MenuBarWindow.PillRect : MenuBar.MenuBarWindow.PillRect;
+            if (island is { } r) return new Rect(r.X - originX, r.Y - originY, r.Width, r.Height);
+            var area = SystemParameters.WorkArea;
+            var cx = area.Left + area.Width * Math.Clamp(_settings.Position, 0, 1) - originX;
+            return new Rect(cx - 100, area.Top - originY, 200, MenuBar.MenuBarWindow.BarHeight);
+        }
+        // Painel na lateral: nasce de uma pílula em pé encostada na borda.
+        var areaV = SystemParameters.WorkArea;
+        var cy = areaV.Top + areaV.Height * Math.Clamp(_settings.Position, 0, 1) - originY;
+        var x = _settings.Edge == DockEdge.Left ? areaV.Left - originX : areaV.Right - originX - 34;
+        return new Rect(x, cy - 60, 34, 120);
+    }
+
+    private void ApplyMorph(double[] v)
+    {
+        double x = v[0], y = v[1], w = Math.Max(1, v[2]), h = Math.Max(1, v[3]);
+        var full = _morphFull;
+        var m = ExpandedPanel.Margin;
+
+        // Passou do tamanho final (o "quique" da mola): estica o painel um tiquinho.
+        var sx = full.Width > 0 ? Math.Max(1, w / full.Width) : 1;
+        var sy = full.Height > 0 ? Math.Max(1, h / full.Height) : 1;
+        var cx = _morphFrom.X + _morphFrom.Width / 2;
+        _panelScale.CenterX = cx;
+        _panelScale.CenterY = 0;
+        _panelScale.ScaleX = sx;
+        _panelScale.ScaleY = sy;
+        _coverScale.CenterX = cx;
+        _coverScale.CenterY = m.Top;
+        _coverScale.ScaleX = sx;
+        _coverScale.ScaleY = sy;
+
+        // Recorte no espaço "sem esticar" (desfaz a escala).
+        var local = new Rect(cx + (x - cx) / sx, y / sy, w / sx, h / sy);
+        var radius = Math.Clamp(v[4], 0, Math.Min(local.Width, local.Height) / 2);
+        _panelClip.Rect = local;
+        _panelClip.RadiusX = _panelClip.RadiusY = radius;
+        _coverClip.Rect = new Rect(local.X, local.Y + m.Top, local.Width, local.Height);
+        _coverClip.RadiusX = _coverClip.RadiusY = radius;
+
+        // Quanto já abriu (0 = pílula, 1 = painel): o preto vai sumindo e o conteúdo aparece.
+        var span = full.Height - _morphFrom.Height;
+        var p = span > 1 ? Math.Clamp((h - _morphFrom.Height) / span, 0, 1) : 1;
+        if (_morphCover is not null) _morphCover.Opacity = 1 - SmoothStep(0.2, 0.8, p);
+        PanelShadow.Opacity = SmoothStep(0.75, 1, p);
+    }
+
+    private static double SmoothStep(double a, double b, double x)
+    {
+        var t = Math.Clamp((x - a) / (b - a), 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
     private void AnimatePanel(bool show, Action? onDone)
     {
-        var top = _settings.Edge == DockEdge.Top;
-        var area = SystemParameters.WorkArea;
-        var position = Math.Clamp(_settings.Position, 0, 1);
+        EnsureMorph();
+        var m = ExpandedPanel.Margin;
+        _morphCover!.Margin = new Thickness(m.Left, 0, m.Right, m.Bottom);
+        _morphCover.CornerRadius = ExpandedPanel.CornerRadius;
+        var panelRadius = ExpandedPanel.CornerRadius.TopLeft;
+        _morphFull = new Rect(0, 0, Math.Max(1, Width - m.Left - m.Right), Math.Max(1, Height - m.Top - m.Bottom));
+        var token = ++_panelAnimToken;
 
-        // Ponto de onde o painel "sai": o avatar.
-        Point origin;
-        if (top)
+        // Começando agora (e não mudando de ideia no meio): parte da ilha.
+        var fresh = ExpandedPanel.Clip is null;
+        if (show && fresh)
         {
-            var centerX = area.Left + area.Width * position;
-            origin = new Point(Width > 0 ? Math.Clamp((centerX - Left) / Width, 0, 1) : 0.5, 0);
+            _morphFrom = PillRect(opening: true);
+            var islandRadius = _settings.Edge == DockEdge.Top ? 16 : 17;
+            _morph!.Snap(_morphFrom.X, _morphFrom.Y, _morphFrom.Width, _morphFrom.Height, islandRadius);
         }
-        else
+        else if (!show)
         {
-            var centerY = area.Top + area.Height * position;
-            var oy = Height > 0 ? Math.Clamp((centerY - Top) / Height, 0, 1) : 0.5;
-            origin = new Point(_settings.Edge == DockEdge.Left ? 0 : 1, oy);
+            if (fresh) _morph!.Snap(0, 0, _morphFull.Width, _morphFull.Height, panelRadius);
+            // Volta para a pílula fechada (a ilha reaparece exatamente ali).
+            _morphFrom = PillRect(opening: false);
         }
 
-        var scale = new ScaleTransform(1, 1);
-        ExpandedPanel.RenderTransformOrigin = origin;
-        ExpandedPanel.RenderTransform = scale;
-
-        // Enquanto anima, o painel vira uma "foto" (BitmapCache): bem mais leve que redesenhar tudo a cada quadro.
+        // Enquanto anima, o painel vira uma "foto" (BitmapCache): recortar/esticar a foto é bem leve.
         var dpi = VisualTreeHelper.GetDpi(this);
         ExpandedPanel.CacheMode = new BitmapCache { RenderAtScale = dpi.DpiScaleX, SnapsToDevicePixels = true };
+        ExpandedPanel.BeginAnimation(OpacityProperty, null);
+        ExpandedPanel.Opacity = 1;
+        ExpandedPanel.RenderTransformOrigin = new Point(0, 0);
+        ExpandedPanel.RenderTransform = _panelScale;
+        ExpandedPanel.Clip = _panelClip;
+        PanelShadow.RenderTransform = _panelScale;
+        _morphCover.Visibility = Visibility.Visible;
+        if (show && fresh) ApplyMorph(new[] { _morph![0], _morph[1], _morph[2], _morph[3], _morph[4] });
 
-        // Animação suave estilo Mac: cresce um pouco a partir do avatar, com fade (sem "molas").
-        AnimationTimeline sx, sy, fade;
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        var easeIn = new CubicEase { EasingMode = EasingMode.EaseIn };
-        if (show)
-        {
-            // Sai da ilha do topo: começa estreito e baixinho e "desdobra" para baixo.
-            sx = Tools.Anim.FromTo(0.6, 1, 320, ease);
-            sy = Tools.Anim.FromTo(0.2, 1, 320, ease);
-            fade = Tools.Anim.FromTo(0, 1, 160, ease);
-        }
-        else
-        {
-            sx = Tools.Anim.To(0.6, 220, easeIn);
-            sy = Tools.Anim.To(0.2, 220, easeIn);
-            fade = Tools.Anim.To(0, 200, easeIn);
-        }
-
-        // Termina quando a animação acaba (e só se nenhuma outra começou depois).
-        var token = ++_panelAnimToken;
-        sy.Completed += (_, _) =>
+        void Finish()
         {
             if (token != _panelAnimToken) return;
             ExpandedPanel.CacheMode = null;
             if (show)
             {
-                // Tira as animações para o painel ficar "normal" (sem custo extra).
-                ExpandedPanel.BeginAnimation(OpacityProperty, null);
-                ExpandedPanel.Opacity = 1;
-                scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-                scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                // Pronto: tira recorte e escala para o painel ficar "normal" (sem custo extra).
+                ExpandedPanel.Clip = null;
                 ExpandedPanel.RenderTransform = Transform.Identity;
+                PanelShadow.RenderTransform = Transform.Identity;
+                PanelShadow.Opacity = 1;
+                _morphCover!.Visibility = Visibility.Collapsed;
+                onDone?.Invoke();
+                return;
             }
-            onDone?.Invoke();
-        };
+            // Fechou: virou a pílula. Com a ilha ligada, ela aparece exatamente no lugar;
+            // sem ilha, o preto some rapidinho antes de a janela encolher.
+            var cover = _morphCover!;
+            void End()
+            {
+                if (token != _panelAnimToken) return;
+                ExpandedPanel.Clip = null;
+                ExpandedPanel.RenderTransform = Transform.Identity;
+                PanelShadow.RenderTransform = Transform.Identity;
+                PanelShadow.Opacity = 1;
+                cover.BeginAnimation(OpacityProperty, null);
+                cover.Visibility = Visibility.Collapsed;
+                onDone?.Invoke();
+            }
+            if (MenuBar.MenuBarWindow.Current is not null && _settings.Edge == DockEdge.Top)
+            {
+                End();
+                return;
+            }
+            var fade = Tools.Anim.To(0, 120);
+            fade.Completed += (_, _) => End();
+            cover.BeginAnimation(OpacityProperty, fade);
+        }
 
-        ExpandedPanel.BeginAnimation(OpacityProperty, fade);
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, sx);
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, sy);
+        _morphCover.BeginAnimation(OpacityProperty, null);
+        if (show)
+        {
+            // Abre com um quique leve, como a Dynamic Island.
+            _morph!.To(0.5, 0.72, Finish, 0, 0, _morphFull.Width, _morphFull.Height, panelRadius);
+            if (_settings.Edge == DockEdge.Top) MenuBar.MenuBarWindow.HandOffToPanel();
+        }
+        else
+        {
+            // Fecha firme, sem quicar.
+            _morph!.To(0.4, 1.0, Finish, _morphFrom.X, _morphFrom.Y, _morphFrom.Width, _morphFrom.Height, _settings.Edge == DockEdge.Top ? 16 : 17);
+        }
     }
 
     private int _panelAnimToken;
