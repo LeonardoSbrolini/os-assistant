@@ -156,6 +156,7 @@ public sealed class MenuBarWindow : Window
         _ramItem = Item(Row(Glyph(""), _ramText), CpuPopover);
         _batteryItem = Item(Row(_batteryGlyph, _batteryText), BatteryPopover);
         _clockItem = Item(Row(Glyph(""), _clockText), CalendarPopover);
+        CalendarPopup.Attach(_clockItem);
         foreach (var item in new[] { _timerItem, _musicItem, _cpuItem, _batteryItem, _clockItem })
             _right.Children.Add(item);
         ApplyCompactItems();
@@ -266,7 +267,8 @@ public sealed class MenuBarWindow : Window
     {
         var bar = _settings.TopBarEnabled && _topBarShown;
         _cpuItem.Visibility = bar ? Visibility.Collapsed : Visibility.Visible;
-        _clockItem.Visibility = bar ? Visibility.Collapsed : Visibility.Visible;
+        // A hora fica sempre na ilha (mesmo com a barra de menus à vista).
+        _clockItem.Visibility = Visibility.Visible;
         _batteryItem.Visibility = !bar && _hasBattery ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -464,17 +466,25 @@ public sealed class MenuBarWindow : Window
             if (!_hidden) Reveal(false);
             return;
         }
-        // Fica sempre à vista e só sai de cena (com transição) quando uma janela encosta no topo,
-        // onde ficam a barra e a ilha (ex.: janela maximizada) ou em tela cheia — como o dock do Mac.
+        // Alt+Tab / Win+Tab: é só a troca de janela; não abre nem fecha nada nesse instante.
+        if (Native.IsSwitcherForeground())
+        {
+            _wantHideSince = DateTime.MaxValue;
+            return;
+        }
+        // A ilha fica à vista e só sai de cena (com transição) quando uma janela encosta no topo,
+        // onde ela fica (ex.: janela maximizada) ou em tela cheia — como o dock do Mac.
         var bar = _settings.TopBarEnabled;
         var fullscreen = Native.IsForegroundFullscreen();
         var fg = Native.ForegroundAppRect();
         var stripTop = Top * dpi.DpiScaleY;
         var stripBottom = stripTop + (BarHeight + 2) * dpi.DpiScaleY;
-        var stripLeft = bar ? Left * dpi.DpiScaleX : rect.Left - 4;
-        var stripRight = bar ? (Left + Width) * dpi.DpiScaleX : rect.Right + 4;
+        var stripLeft = rect.Left - 4;
+        var stripRight = rect.Right + 4;
         var touchesTop = fg is { } r && r.Width > 0 && r.Top < stripBottom && r.Bottom > stripTop && r.Right > stripLeft && r.Left < stripRight;
-        var onDesktop = !fullscreen && !touchesTop;
+        // "Área de trabalho" de verdade: nenhum app na frente (clicou no fundo, Win+D, tudo minimizado).
+        var desktop = !fullscreen && Native.IsDesktopForeground();
+        var onDesktop = desktop;
         // Espaço para a ilha ficar aberta embaixo do topo sem cobrir a janela da frente.
         var centerX = (Left + Width / 2) * dpi.DpiScaleX;
         var openArea = new Rect(centerX - 310 * dpi.DpiScaleX, stripTop, 620 * dpi.DpiScaleX, 300 * dpi.DpiScaleY);
@@ -484,11 +494,10 @@ public sealed class MenuBarWindow : Window
             _roomToOpen = roomToOpen;
             if (!_hidden && !_bar.IsMouseOver && !_dragging) _popover.GoRest();
         }
-        // A barra de menus fica só na área de trabalho, a não ser que a opção "ao levar o mouse ao topo" esteja ligada.
-        var barTop = bar && _settings.TopBarShow == "topo";
-        ShowTopBar(bar && (onDesktop || barTop && !_hidden));
+        // A barra de menus só aparece na área de trabalho, nada além disso.
+        ShowTopBar(bar && desktop && !_hidden);
         var atTopEdge = cy >= Top * dpi.DpiScaleY && cy <= Top * dpi.DpiScaleY + 2 && !fullscreen &&
-            (barTop ? cx >= Left * dpi.DpiScaleX && cx < (Left + Width) * dpi.DpiScaleX : cx >= rect.Left - 80 && cx <= rect.Right + 80);
+            cx >= rect.Left - 80 && cx <= rect.Right + 80;
         var barRect = new Rect(Left * dpi.DpiScaleX, Top * dpi.DpiScaleY, Width * dpi.DpiScaleX, (BarHeight + 4) * dpi.DpiScaleY);
         var mouseHere = !_hidden && (rect.Contains(cx, cy) || _topBarShown && barRect.Contains(cx, cy));
 
@@ -499,10 +508,17 @@ public sealed class MenuBarWindow : Window
             if (!_hidden && !_bar.IsMouseOver && !_dragging) _popover.GoRest();
         }
 
-        if (onDesktop || mouseHere || atTopEdge || _popover.IsExpanded || _topBar.MenuOpen)
+        var stays = !touchesTop && !fullscreen;
+        if (stays || mouseHere || atTopEdge || _popover.IsExpanded || _topBar.MenuOpen || CalendarPopup.IsOpen)
         {
             _wantHideSince = DateTime.MaxValue;
-            if (_hidden && (onDesktop || atTopEdge)) Reveal(true);
+            if (_hidden && (stays || atTopEdge))
+            {
+                Reveal(true);
+                // Veio pelo mouse no topo (com um app na frente): vai direto para o menu escolhido,
+                // sem mostrar primeiro a pílula e depois o menu.
+                if (atTopEdge && !stays) _popover.HoverOpen();
+            }
             return;
         }
         if (_hidden) return;
@@ -790,12 +806,20 @@ public sealed class MenuBarWindow : Window
                 _close.Stop();
                 _close.Interval = TimeSpan.FromMilliseconds(300);
                 if (_w._bar.IsMouseOver || _w._dragging) return;
+                // Calendário aberto a partir da ilha: ela espera ele fechar.
+                if (CalendarPopup.IsOpen)
+                {
+                    _close.Start();
+                    return;
+                }
                 GoRest();
             };
             _open.Tick += (_, _) =>
             {
                 _open.Stop();
                 if (!_w._bar.IsMouseOver || State == HoverState || State == IslandState.Full) return;
+                // Com um app aberto: um menu OU o outro (o pequeno não vira o grande sozinho).
+                if (!_w._onDesktop && State == IslandState.Peek) return;
                 if (HoverState == IslandState.Full) { _w._tab = "inicio"; Open(); } else Peek();
             };
             _w._bar.MouseLeave += (_, _) =>
@@ -844,8 +868,21 @@ public sealed class MenuBarWindow : Window
                 _ => IslandState.Closed,
             };
 
-        /// <summary>Como a ilha abre ao passar o mouse.</summary>
-        private IslandState HoverState => _w._settings.IslandHover == "peek" ? IslandState.Peek : IslandState.Full;
+        /// <summary>
+        /// Como a ilha abre ao passar o mouse: na área de trabalho vale "Ao passar o mouse"; com algum
+        /// app aberto na frente vale "Com um app aberto" (menu pequeno OU grande, nunca os dois).
+        /// </summary>
+        private IslandState HoverState =>
+            (_w._onDesktop ? _w._settings.IslandHover : _w._settings.IslandHoverBusy) == "peek" ? IslandState.Peek : IslandState.Full;
+
+        /// <summary>Abre já no jeito de "mouse em cima" (sem passar pelo outro).</summary>
+        public void HoverOpen()
+        {
+            _close.Stop();
+            _open.Stop();
+            if (State == HoverState) return;
+            if (HoverState == IslandState.Full) { _w._tab = "inicio"; Open(); } else Peek();
+        }
 
         /// <summary>Volta ao jeito escolhido nas configurações.</summary>
         public void GoRest()
@@ -973,6 +1010,7 @@ public sealed class MenuBarWindow : Window
 
         var clock = Text("", 22, bold: true);
         clock.Margin = new Thickness(12, 0, 4, 0);
+        CalendarPopup.Attach(clock);
         var play = new Widgets.PillButton("\uE768", media.TogglePlayPause, false, 30);
         var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         right.Children.Add(play);
@@ -1130,6 +1168,11 @@ public sealed class MenuBarWindow : Window
         // Cabeçalho
         var header = new DockPanel { Margin = new Thickness(2, 8, 2, 10) };
         var right = new StackPanel { Orientation = Orientation.Horizontal };
+        // Hora sempre à vista no menu aberto (clique abre o calendário).
+        var headerClock = Text(DateTime.Now.ToString("HH:mm", PtBr), 15, bold: true);
+        headerClock.Margin = new Thickness(0, 0, 10, 0);
+        CalendarPopup.Attach(headerClock);
+        right.Children.Add(headerClock);
         right.Children.Add(new Widgets.PillButton("", () => { _popover.Close(); MainWindow.Current?.ExpandPinned(); }, false, 28) { ToolTip = "Abrir o assistente" });
         right.Children.Add(new Widgets.PillButton("", () => { _popover.Close(); SettingsWindow.Open(); }, false, 28) { ToolTip = "Configurações" });
         DockPanel.SetDock(right, Dock.Right);
@@ -1173,7 +1216,12 @@ public sealed class MenuBarWindow : Window
             _ => HomeView(),
         };
         root.Children.Add(body.View);
-        return (root, body.Update);
+        var bodyUpdate = body.Update;
+        return (root, () =>
+        {
+            headerClock.Text = DateTime.Now.ToString("HH:mm", PtBr);
+            bodyUpdate?.Invoke();
+        });
     }
 
     private static Border Card(UIElement child, double width = double.NaN) => new()
@@ -1231,14 +1279,20 @@ public sealed class MenuBarWindow : Window
         else
         {
             var hour = DateTime.Now.Hour;
-            var hello = Text(hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite", 20, bold: true);
+            var hello = Text(hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite", 15, bold: true);
+            hello.Opacity = 0.85;
+            var bigClock = Text("", 34, bold: true);
+            bigClock.Margin = new Thickness(0, -4, 0, -2);
             var timerLine = Muted("");
             var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             stack.Children.Add(hello);
+            stack.Children.Add(bigClock);
             stack.Children.Add(timerLine);
             first = Card(stack);
+            CalendarPopup.Attach(first);
             update += () =>
             {
+                bigClock.Text = DateTime.Now.ToString("HH:mm", PtBr);
                 var t = TimerService.Instance;
                 var sw = StopwatchService.Instance;
                 timerLine.Text = t.State != TimerState.Idle ? "Timer: " + (t.State == TimerState.Finished ? "acabou!" : TimerService.Format(t.Remaining))
@@ -1285,8 +1339,7 @@ public sealed class MenuBarWindow : Window
         week.Children.Add(sub);
         var weekCard = Card(week);
         weekCard.Cursor = Cursors.Hand;
-        weekCard.ToolTip = "Abrir calendário e notificações";
-        weekCard.MouseLeftButtonUp += (_, _) => { _popover.Close(); Native.WinCombo(0x4E); };
+        CalendarPopup.Attach(weekCard);
         Grid.SetColumn(weekCard, 1);
         grid.Children.Add(weekCard);
 

@@ -47,7 +47,8 @@ internal static class Native
                 if (IgnoredClasses.Contains(cls.ToString())) return true;
 
                 GetWindowThreadProcessId(hwnd, out var pid);
-                if (pid == ownPid) return true;
+                // Do próprio Assistente só entra a janela de Configurações (ela é um app normal no dock).
+                if (pid == ownPid && title.ToString() != SettingsTitle) return true;
                 var exe = GetProcessPath(pid);
                 if (exe is null) return true;
 
@@ -311,6 +312,77 @@ internal static class Native
                file.Equals("ShellExperienceHost.exe", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Título da janela de Configurações (é tratada como um app normal: dock, Alt+Tab, janelas por cima).</summary>
+    public const string SettingsTitle = "Configurações do Assistente";
+
+    /// <summary>Janela do próprio Assistente que se comporta como app (hoje, só as Configurações).</summary>
+    public static bool IsOwnAppWindow(IntPtr hwnd)
+    {
+        var length = GetWindowTextLength(hwnd);
+        if (length == 0) return false;
+        var title = new StringBuilder(length + 1);
+        GetWindowText(hwnd, title, title.Capacity);
+        return title.ToString() == SettingsTitle;
+    }
+
+    /// <summary>
+    /// Alt+Tab, Win+Tab (visão de tarefas) ou o "trocador" de janelas está na frente? Nesse momento
+    /// nada deve abrir nem fechar: é só a troca de janela acontecendo.
+    /// </summary>
+    public static bool IsSwitcherForeground()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return false;
+        var cls = new StringBuilder(256);
+        GetClassName(hwnd, cls, cls.Capacity);
+        var name = cls.ToString();
+        if (name is "MultitaskingViewFrame" or "TaskSwitcherWnd" or "TaskSwitcherOverlayWnd" or "ForegroundStaging" or "XamlExplorerHostIslandWindow")
+            return true;
+        // Alt segurado (Alt+Tab em andamento).
+        return (GetAsyncKeyState(0x12) & 0x8000) != 0 && (GetAsyncKeyState(0x09) & 0x8000) != 0;
+    }
+
+    /// <summary>
+    /// A área de trabalho da tela principal está "na frente"? (nenhum app em foco: foi clicado o
+    /// fundo, Win+D, tudo minimizado...). Com duas telas, um app em foco na outra tela não conta,
+    /// mas uma janela aberta e não minimizada na tela principal conta.
+    /// </summary>
+    public static bool IsDesktopForeground()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return !AnyAppWindowOnPrimary();
+        var cls = new StringBuilder(256);
+        GetClassName(hwnd, cls, cls.Capacity);
+        var name = cls.ToString();
+        if (name is "Progman" or "WorkerW") return true;
+        var own = GetWindowProcessId(hwnd) == (uint)Environment.ProcessId;
+        if (own && IsOwnAppWindow(hwnd)) return !IsOnPrimary(hwnd) && !AnyAppWindowOnPrimary();
+        // Barra de tarefas, ilha, dock, widgets do próprio Assistente: vale o que está atrás.
+        if (own || name is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" || IsShellUiForeground()) return !AnyAppWindowOnPrimary();
+        if (IsIconic(hwnd)) return !AnyAppWindowOnPrimary();
+        if (IsOnPrimary(hwnd)) return false;
+        return !AnyAppWindowOnPrimary();
+    }
+
+    /// <summary>Existe alguma janela de app aberta (não minimizada) na tela principal?</summary>
+    private static bool AnyAppWindowOnPrimary()
+    {
+        // Chamado várias vezes por segundo: guarda a resposta por meio segundo.
+        if (DateTime.Now - _anyOnPrimaryAt < TimeSpan.FromMilliseconds(500)) return _anyOnPrimary;
+        _anyOnPrimaryAt = DateTime.Now;
+        _anyOnPrimary = false;
+        foreach (var w in GetOpenWindows())
+            if (!w.Minimized && IsOnPrimary(w.Handle))
+            {
+                _anyOnPrimary = true;
+                break;
+            }
+        return _anyOnPrimary;
+    }
+
+    private static bool _anyOnPrimary;
+    private static DateTime _anyOnPrimaryAt = DateTime.MinValue;
+
     /// <summary>Posição do mouse em pixels da tela.</summary>
     public static (int X, int Y) CursorPosition()
     {
@@ -328,7 +400,7 @@ internal static class Native
     {
         var hwnd = GetForegroundWindow();
         if (hwnd == IntPtr.Zero || IsIconic(hwnd) || !IsWindowVisible(hwnd)) return null;
-        if (GetWindowProcessId(hwnd) == (uint)Environment.ProcessId) return null;
+        if (GetWindowProcessId(hwnd) == (uint)Environment.ProcessId && !IsOwnAppWindow(hwnd)) return null;
         var cls = new StringBuilder(256);
         GetClassName(hwnd, cls, cls.Capacity);
         if (IgnoredClasses.Contains(cls.ToString())) return null;
@@ -499,6 +571,7 @@ internal static class Native
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, StringBuilder text, int max);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
