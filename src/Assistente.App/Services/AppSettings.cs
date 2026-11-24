@@ -188,6 +188,35 @@ public sealed class AppSettings
     /// <summary>Recolocar o papel de parede escolhido quando a empresa (AD) ou outro programa trocar.</summary>
     public bool WallpaperKeep { get; set; } = true;
 
+    // ---------- Tela personalizada (área de trabalho) ----------
+
+    /// <summary>Esconder os ícones da área de trabalho do Windows.</summary>
+    public bool DesktopHideIcons { get; set; }
+
+    /// <summary>Widget grande de atalhos no centro da área de trabalho.</summary>
+    public bool DesktopWidgetEnabled { get; set; }
+
+    /// <summary>Em qual tela: "principal", "todas" ou o nome da tela do Windows (\\.\DISPLAY2).</summary>
+    public string DesktopWidgetScreen { get; set; } = "principal";
+
+    /// <summary>Fundo do widget: "vidro" (liquid glass) ou "solido".</summary>
+    public string DesktopWidgetBackground { get; set; } = "vidro";
+
+    /// <summary>Atalhos do widget: "vidro" (liquid glass) ou "solido".</summary>
+    public string DesktopWidgetTiles { get; set; } = "vidro";
+
+    /// <summary>Tamanho de cada atalho (DIPs).</summary>
+    public double DesktopWidgetTileSize { get; set; } = 96;
+
+    /// <summary>Atalhos por linha.</summary>
+    public int DesktopWidgetColumns { get; set; } = 6;
+
+    /// <summary>Relógio e data grandes em cima dos atalhos.</summary>
+    public bool DesktopWidgetClock { get; set; } = true;
+
+    /// <summary>Atalhos (apps, pastas e sites) do widget.</summary>
+    public System.Collections.Generic.List<DesktopShortcut>? DesktopShortcuts { get; set; }
+
     // ---------- Janela de configurações ----------
 
     /// <summary>A janela de configurações abre em tela cheia (true) ou em janela (false).</summary>
@@ -255,4 +284,16 @@ public sealed class AppSettings
             // Preferências não são críticas.
         }
     }
+}
+
+/// <summary>Atalho do widget da área de trabalho.</summary>
+public sealed class DesktopShortcut
+{
+    public string Name { get; set; } = "";
+
+    /// <summary>Caminho do programa/arquivo/pasta ou endereço do site.</summary>
+    public string Target { get; set; } = "";
+
+    /// <summary>"app", "pasta" ou "site".</summary>
+    public string Kind { get; set; } = "app";
 }
