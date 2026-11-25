@@ -66,7 +66,7 @@
                 </LinearGradientBrush>
             </Border.BorderBrush>
             <Grid>
-            <Border Background="{DynamicResource PanelGlowBrush}" CornerRadius="{Binding CornerRadius, ElementName=ExpandedPanel}" IsHitTestVisible="False" />
+            <Border x:Name="PanelGlow" Background="{DynamicResource PanelGlowBrush}" CornerRadius="{Binding CornerRadius, ElementName=ExpandedPanel}" IsHitTestVisible="False" />
             <DockPanel>
                 <!-- Barra lateral: ferramentas + ações no rodapé (sem cabeçalho) -->
                 <Border DockPanel.Dock="Left" Width="190" Background="{StaticResource SidebarBrush}"
@@ -91,13 +91,15 @@
                         <Border x:Name="SettingsRow" DockPanel.Dock="Bottom" Margin="8,4,8,10" Padding="10,6"
                                 CornerRadius="10" Background="Transparent" Cursor="Hand" ToolTip="Configurações"
                                 MouseLeftButtonUp="SettingsButton_Click" />
-                        <Border DockPanel.Dock="Bottom" Height="1" Margin="14,0" Background="{StaticResource CardBorderBrush}" />
+                        <Border x:Name="SidebarDivider" DockPanel.Dock="Bottom" Height="1" Margin="14,0" Background="{StaticResource CardBorderBrush}" />
                         <ListBox x:Name="ToolList" SelectionChanged="ToolList_SelectionChanged" Padding="0,0,0,4"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ScrollViewer.CanContentScroll="False" />
                     </DockPanel>
                 </Border>
 
+                <!-- Cabeçalho igual ao da Dynamic Island (só com o painel no topo) -->
+                <DockPanel x:Name="IslandHeader" DockPanel.Dock="Top" Visibility="Collapsed" Margin="12,10,14,0" />
                 <ContentControl x:Name="ToolHost" Margin="20,16,16,14" Focusable="False" ClipToBounds="True" />
             </DockPanel>
             </Grid>

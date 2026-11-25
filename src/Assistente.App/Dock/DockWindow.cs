@@ -61,7 +61,6 @@ public sealed class DockWindow : Window
     private bool _animating;
     private double? _mouseX;
     private DateTime _wantHideSince = DateTime.MaxValue;
-    private DateTime _lastTaskbarCheck;
     private TimeSpan _lastFrame;
     private int _barPx;
     private Rect? _barRect;
@@ -188,6 +187,7 @@ public sealed class DockWindow : Window
     {
         try
         {
+            Services.TaskbarBlocker.Stop();
             Native.SetTaskbarVisible(true);
             if (settings.DockTaskbarWasAutoHide is { } original)
             {
@@ -206,7 +206,9 @@ public sealed class DockWindow : Window
     {
         try
         {
-            if (settings.DockEnabled && settings.DockHideTaskbar)
+            // Barra do Windows desativada: some de vez, em todos os monitores, mesmo com o
+            // mouse embaixo da tela (vale com ou sem o dock ligado).
+            if (settings.DockHideTaskbar)
             {
                 if (settings.DockTaskbarWasAutoHide is null)
                 {
@@ -217,6 +219,7 @@ public sealed class DockWindow : Window
                 // impede que ela apareça ao encostar o mouse embaixo.
                 if (!Native.TaskbarAutoHide) Native.TaskbarAutoHide = true;
                 Native.SetTaskbarVisible(false);
+                Services.TaskbarBlocker.Start();
             }
             else
             {
@@ -591,12 +594,7 @@ public sealed class DockWindow : Window
 
         foreach (var entry in _entries) entry.Tick();
 
-        // O Explorer às vezes mostra a barra de novo: esconde outra vez (menos com o Iniciar aberto).
-        if (TaskbarHidden && DateTime.Now - _lastTaskbarCheck > TimeSpan.FromSeconds(1))
-        {
-            _lastTaskbarCheck = DateTime.Now;
-            if (Native.AnyTaskbarVisible() && !Native.IsShellUiForeground()) Native.SetTaskbarVisible(false);
-        }
+        // (Esconder a barra do Windows de vez é com o TaskbarBlocker.)
 
         if (HideMode == "nunca" || !IsLoaded) return;
 
