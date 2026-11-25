@@ -1,6 +1,35 @@
+<p align="center"><img src="docs/icone.png" width="128" alt="Ícone do Assistente"></p>
+
 # Assistente
 
-Widget flutuante para Windows: fica como uma alça fina no topo da tela (centralizada) e, ao passar o mouse, abre um painel com ferramentas úteis do dia a dia.
+Deixa o Windows com cara de Mac: uma **Dynamic Island** no topo da tela, **dock** embaixo, barra de menus, menus nos cantos, tela personalizada com atalhos e um painel com ferramentas úteis do dia a dia.
+
+## Como instalar (sem precisar entender de programação)
+
+1. Abra a página de [versões (Releases)](https://github.com/LeonardoSbrolini/os-assistant/releases/latest).
+2. Em **Assets**, baixe o **`Assistente.exe`** (versão completa, funciona em qualquer Windows 10/11).
+   - Já tem o *.NET 8 Desktop Runtime*? Pode baixar o `Assistente-leve.exe`, que é bem menor.
+3. Coloque o arquivo numa pasta fixa (ex.: `Documentos\Assistente`) e dê dois cliques nele.
+   - Se o Windows mostrar "O Windows protegeu o computador", clique em **Mais informações › Executar assim mesmo** (o app não tem assinatura paga da Microsoft).
+4. Pronto: a ilha aparece no topo e o ícone ✦ fica na bandeja (perto do relógio). Para abrir junto com o Windows: **Configurações › Geral › Iniciar com o Windows**.
+
+**Atualizações:** o app se atualiza sozinho (confere ao abrir e a cada 6 horas). Para forçar: ícone da bandeja › *Verificar atualizações*.
+
+**Desinstalar:** feche pelo ícone da bandeja › *Sair* e apague o `.exe`. As configurações ficam em `%APPDATA%\Assistente` (pode apagar também).
+
+## Como usar
+
+| Quero… | Faça isto |
+|---|---|
+| Abrir as ferramentas (Sistema, Chat IA, Música…) | Passe o mouse na ilha do topo e clique no ícone do assistente, ou dois cliques no ícone da bandeja |
+| Ver o calendário | Clique em qualquer data ou hora (barra do topo, ilha, menu do canto, tela personalizada) |
+| Mudar como a ilha abre (menu pequeno ou grande) | Configurações › Ilha e menus |
+| Ver Wi‑Fi, volume, bateria e notificações | Leve o mouse ao canto de baixo à direita da tela |
+| Abrir seus apps e pastas favoritos | Com a área de trabalho à vista, encoste o mouse na borda esquerda |
+| Colocar atalhos no meio da área de trabalho | Configurações › Tela personalizada e arraste apps, pastas ou sites para o widget |
+| Trocar o papel de parede (e manter mesmo com política da empresa) | Configurações › Papel de parede |
+
+A barra de menus do topo só aparece com a **área de trabalho** na frente; com um app aberto ela some sozinha. Tudo funciona na **tela principal** quando há dois monitores.
 
 ## Por que C# + .NET 8 + WPF
 

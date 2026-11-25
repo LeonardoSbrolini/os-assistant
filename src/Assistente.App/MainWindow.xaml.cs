@@ -241,6 +241,8 @@ public partial class MainWindow : Window
     private void PlaceEars(double x, double width)
     {
         if (_leftEar is null || _rightEar is null) return;
+        // Antes da janela ter tamanho (Width = NaN) não dá para posicionar: fica para depois.
+        if (double.IsNaN(x) || double.IsNaN(width) || double.IsInfinity(x) || double.IsInfinity(width)) return;
         var show = IslandStyle;
         _leftEar.Opacity = _rightEar.Opacity = show ? 1 : 0;
         if (!show) return;

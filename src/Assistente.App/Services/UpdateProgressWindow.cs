@@ -149,6 +149,10 @@ internal sealed class UpdateProgressWindow : Window
         _action = Ui.Btn("Cancelar", () => _onAction?.Invoke());
         _action.HorizontalAlignment = HorizontalAlignment.Right;
         _action.Margin = new Thickness(0, 18, 0, 0);
+        // Pílula, igual aos outros botões do app.
+        _action.Tag = new CornerRadius(15);
+        _action.Padding = new Thickness(20, 7, 20, 7);
+        _action.FontWeight = FontWeights.SemiBold;
 
         var body = new StackPanel();
         body.Children.Add(top);
@@ -230,7 +234,11 @@ internal sealed class UpdateProgressWindow : Window
     private void SetAction(string text, Action action, bool primary = false)
     {
         _action.Content = text;
-        _action.Style = primary ? (Style)Application.Current.Resources["PrimaryButton"] : null;
+        // Style = null jogava o botão de volta para o visual padrão do Windows: sem destaque,
+        // volta ao estilo do app (pílula escura).
+        if (primary) _action.Style = (Style)Application.Current.Resources["PrimaryButton"];
+        else _action.ClearValue(StyleProperty);
+        _action.Tag = new CornerRadius(15);
         _onAction = action;
     }
 
