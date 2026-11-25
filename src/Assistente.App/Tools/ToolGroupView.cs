@@ -34,11 +34,12 @@ public sealed class ToolGroupView : DockPanel
             {
                 var tab = new RadioButton
                 {
-                    Style = (Style)Application.Current.Resources["PillTab"],
                     GroupName = "group-" + group.Name,
                     Content = TabContent(tool),
                     Margin = new Thickness(0, 0, 6, 6),
                 };
+                // Pelo nome: no painel do topo vira a aba da Dynamic Island.
+                tab.SetResourceReference(StyleProperty, "PillTab");
                 tab.Checked += (_, _) => Show(tool);
                 _tabs[tool] = tab;
                 strip.Children.Add(tab);

@@ -165,8 +165,6 @@ public static class Ui
         return panel;
     }
 
-    private static readonly Brush CardGradient = Frozen(new LinearGradientBrush(Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x08, 0xFF, 0xFF, 0xFF), 90));
-    private static readonly Brush CardEdge = Frozen(new LinearGradientBrush(Color.FromArgb(0x2C, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x0C, 0xFF, 0xFF, 0xFF), 90));
 
     private static Brush Frozen(Brush b)
     {
@@ -195,16 +193,18 @@ public static class Ui
             body.Children.Add(child);
         }
 
-        return new Border
+        var card = new Border
         {
-            Background = CardGradient,
-            BorderBrush = CardEdge,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(14),
             Padding = new Thickness(16, 14, 16, 10),
             Margin = new Thickness(0, 0, 0, 14),
             Child = body,
         };
+        // Pelo nome (e não fixo): o painel no topo troca pelos cartões da Dynamic Island.
+        card.SetResourceReference(Border.BackgroundProperty, "ToolCardBrush");
+        card.SetResourceReference(Border.BorderBrushProperty, "ToolCardEdge");
+        card.SetResourceReference(Border.CornerRadiusProperty, "ToolCardRadius");
+        return card;
     }
 
     // ---------- Textos ----------

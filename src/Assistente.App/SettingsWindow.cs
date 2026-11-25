@@ -1382,6 +1382,20 @@ public sealed class SettingsWindow : Window
         autoHide.FontSize = 14;
         autoHide.Click += (_, _) => TaskbarStyle.SetAutoHide(_settings, autoHide.IsChecked == true);
 
+        // Desativada = some de vez em todos os monitores (nem com o mouse embaixo ela volta).
+        var disabled = Ui.Check("Desativar a barra do Windows (não aparece de jeito nenhum, nem com o mouse embaixo da tela)", _settings.DockHideTaskbar);
+        disabled.FontSize = 14;
+        disabled.Margin = new Thickness(0, 0, 0, 10);
+        disabled.Click += (_, _) =>
+        {
+            _settings.DockHideTaskbar = disabled.IsChecked == true;
+            _settings.Save();
+            Docking.DockWindow.Apply(_settings);
+            autoHide.IsEnabled = !_settings.DockHideTaskbar;
+            autoHide.IsChecked = TaskbarStyle.AutoHide;
+        };
+        autoHide.IsEnabled = !_settings.DockHideTaskbar;
+
         void Sync()
         {
             foreach (var (box, opt) in boxes) box.IsChecked = TaskbarStyle.IsMac(opt);
@@ -1412,8 +1426,10 @@ public sealed class SettingsWindow : Window
                 Ui.Caption("Usa os ajustes oficiais do Windows (os mesmos de Configurações › Personalização › Barra de tarefas), " +
                            "então a barra continua funcionando normal: Wi‑Fi, volume, relógio e bandeja ficam onde sempre estiveram. " +
                            "O formato e a transparência da barra o Windows não deixa mudar sem programas que alteram o sistema.")),
-            Ui.Card("Esconder", "\uE7B3", autoHide,
-                Ui.Caption("A barra some quando você não está usando e volta ao encostar o mouse embaixo.")));
+            Ui.Card("Esconder", "\uE7B3", disabled,
+                Ui.Caption("Desativada, a barra some em todos os monitores e não volta mais (o Iniciar continua abrindo pela tecla do Windows). Desmarque para ela voltar."),
+                autoHide,
+                Ui.Caption("Ocultar automaticamente: a barra some quando você não está usando e volta ao encostar o mouse embaixo.")));
     }
 
     private FrameworkElement DockPage()
@@ -1435,7 +1451,7 @@ public sealed class SettingsWindow : Window
         }
 
         var enabled = Toggle("Mostrar o dock embaixo da tela", _settings.DockEnabled, v => _settings.DockEnabled = v);
-        var hideTaskbar = Toggle("Com o dock ligado, esconder a barra do Windows (só o dock aparece embaixo)", _settings.DockHideTaskbar, v => _settings.DockHideTaskbar = v);
+        var hideTaskbar = Toggle("Desativar a barra do Windows (não aparece de jeito nenhum, nem com o mouse embaixo da tela)", _settings.DockHideTaskbar, v => _settings.DockHideTaskbar = v);
         RadioButton Mode(string text, string value)
         {
             var radio = Ui.Radio(text, "dockhide", _settings.DockHideMode == value);

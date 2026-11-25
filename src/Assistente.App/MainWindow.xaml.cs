@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Assistente.App.Services;
 using Assistente.App.Tools;
@@ -202,6 +203,127 @@ public partial class MainWindow : Window
         };
         ((Grid)Content).Children.Add(_morphCover);
         _morph = new Spring(5, ApplyMorph);
+    }
+
+    // ---------- Visual da Dynamic Island dentro do painel ----------
+
+    private Widgets.PillButton? _islandPin;
+    private TextBlock? _islandClock;
+    private DispatcherTimer? _islandClockTimer;
+    private bool? _islandLook;
+    private Effect? _panelShadowEffect;
+
+    /// <summary>Conteúdo do painel (o que fica por dentro do preto).</summary>
+    private Grid PanelContent => (Grid)ExpandedPanel.Child;
+
+    /// <summary>
+    /// No topo o painel é a Dynamic Island aberta, então tudo por dentro segue a ilha: fundo preto
+    /// puro sem brilho nem sombra, abas em pílula clara, cartões cinza-translúcidos sem borda,
+    /// cabeçalho com a hora e botões redondos (no lugar das bolinhas do Mac).
+    /// </summary>
+    private void ApplyIslandLook(bool island)
+    {
+        if (_islandLook == island) return;
+        _islandLook = island;
+        var res = ExpandedPanel.Resources;
+        if (island)
+        {
+            EnsureIslandHeader();
+            res["PillTab"] = Application.Current.Resources["IslandPillTab"];
+            res["ToolCardBrush"] = Frozen(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF));
+            res["ToolCardEdge"] = Brushes.Transparent;
+            res["ToolCardRadius"] = new CornerRadius(18);
+            res["CardBrush"] = Frozen(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF));
+            res["CardBorderBrush"] = Brushes.Transparent;
+            res["InputBrush"] = Frozen(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+            res["BorderBrush"] = Frozen(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+            res["HoverBrush"] = Frozen(Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
+            ToolList.ItemContainerStyle = (Style)Application.Current.Resources["IslandNavItem"];
+            Sidebar.Background = Brushes.Transparent;
+            Sidebar.Width = 176;
+            PanelGlow.Visibility = Visibility.Collapsed;
+            WindowDots.Visibility = Visibility.Collapsed;
+            SettingsRow.Visibility = Visibility.Collapsed;
+            SidebarDivider.Visibility = Visibility.Collapsed;
+            IslandHeader.Visibility = Visibility.Visible;
+            ToolList.Margin = new Thickness(0, 12, 0, 0);
+            ToolHost.Margin = new Thickness(14, 10, 18, 16);
+            _panelShadowEffect ??= PanelShadow.Effect;
+            PanelShadow.Effect = null; // a ilha não tem sombra
+            PanelShadow.Background = Brushes.Transparent;
+            _islandClockTimer?.Start();
+        }
+        else
+        {
+            foreach (var key in new[] { "PillTab", "ToolCardBrush", "ToolCardEdge", "ToolCardRadius", "CardBrush", "CardBorderBrush", "InputBrush", "BorderBrush", "HoverBrush" })
+                res.Remove(key);
+            ToolList.ClearValue(ItemsControl.ItemContainerStyleProperty);
+            Sidebar.SetResourceReference(Border.BackgroundProperty, "SidebarBrush");
+            Sidebar.Width = 190;
+            PanelGlow.Visibility = Visibility.Visible;
+            WindowDots.Visibility = Visibility.Visible;
+            SettingsRow.Visibility = Visibility.Visible;
+            SidebarDivider.Visibility = Visibility.Visible;
+            IslandHeader.Visibility = Visibility.Collapsed;
+            ToolList.ClearValue(MarginProperty);
+            ToolHost.Margin = new Thickness(20, 16, 16, 14);
+            if (_panelShadowEffect is not null) PanelShadow.Effect = _panelShadowEffect;
+            PanelShadow.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
+            _islandClockTimer?.Stop();
+        }
+        // Os nomes do menu lateral mudam de visual junto.
+        foreach (var item in ToolList.Items.OfType<ListBoxItem>())
+            if (item.Tag is ToolGroup group) item.Content = GroupLabel(group);
+    }
+
+    private static Brush Frozen(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>Cabeçalho igual ao da ilha aberta: hora (abre o calendário) e botões redondos.</summary>
+    private void EnsureIslandHeader()
+    {
+        if (_islandPin is not null) return;
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        _islandClock = new TextBlock
+        {
+            FontSize = 15,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0),
+            Text = DateTime.Now.ToString("HH:mm", Ui.PtBr),
+        };
+        CalendarPopup.Attach(_islandClock);
+        right.Children.Add(_islandClock);
+        _islandPin = new Widgets.PillButton("\uE718", () => SetPinned(!_pinned), false, 28) { ToolTip = "Fixar aberto", Opacity = 0.75 };
+        right.Children.Add(_islandPin);
+        right.Children.Add(new Widgets.PillButton("\uE713", () => SettingsWindow.Open(), false, 28) { ToolTip = "Configurações" });
+        right.Children.Add(new Widgets.PillButton("\uE711", () => { SetPinned(false); Collapse(); }, false, 28) { ToolTip = "Fechar" });
+        DockPanel.SetDock(right, Dock.Right);
+        IslandHeader.Children.Add(right);
+        IslandHeader.Children.Add(new FrameworkElement()); // ocupa o resto
+        SetPinned(_pinned);
+
+        _islandClockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _islandClockTimer.Tick += (_, _) =>
+        {
+            if (_islandClock is not null) _islandClock.Text = DateTime.Now.ToString("HH:mm", Ui.PtBr);
+        };
+    }
+
+    /// <summary>Igual à ilha: o conteúdo aparece crescendo um pouco (92% → 100%) com fade.</summary>
+    private static void PopIn(FrameworkElement element, double delayMs)
+    {
+        var scale = new ScaleTransform(0.92, 0.92);
+        element.RenderTransformOrigin = new Point(0.5, 0);
+        element.RenderTransform = scale;
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim.To(1, 340, Anim.EaseOut, delayMs));
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.To(1, 340, Anim.EaseOut, delayMs));
+        element.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 220, null, delayMs));
     }
 
     // ---------- Painel no topo igual à ilha ----------
@@ -422,6 +544,8 @@ public partial class MainWindow : Window
         {
             // Abre com um quique leve, como a Dynamic Island.
             _morph!.To(0.5, 0.72, Finish, 0, 0, _morphFull.Width, _morphFull.Height, panelRadius);
+            // Como na ilha: o conteúdo "nasce" de dentro do preto, crescendo um pouco com fade.
+            if (IslandStyle && fresh) PopIn(PanelContent, 100);
             if (_settings.Edge == DockEdge.Top) MenuBar.MenuBarWindow.HandOffToPanel();
         }
         else
@@ -595,6 +719,12 @@ public partial class MainWindow : Window
         _pinned = pinned;
         PinDot.Background = new SolidColorBrush(pinned ? Color.FromRgb(0x28, 0xC8, 0x40) : Color.FromRgb(0x4A, 0x4D, 0x57));
         PinDot.ToolTip = pinned ? "Desafixar" : "Fixar aberto";
+        if (_islandPin is not null)
+        {
+            _islandPin.Glyph = pinned ? "\uE77A" : "\uE718";
+            _islandPin.ToolTip = pinned ? "Desafixar" : "Fixar aberto";
+            _islandPin.Opacity = pinned ? 1 : 0.75;
+        }
         PinGlyph.Text = pinned ? "" : "";
     }
 
@@ -614,9 +744,11 @@ public partial class MainWindow : Window
             ExpandedPanel.Background = IslandBlack;
             Sidebar.CornerRadius = new CornerRadius(0, 0, 0, 30);
             ExpandedPanel.Margin = new Thickness(16, 0, 16, 24);
+            ApplyIslandLook(true);
         }
         else
         {
+            ApplyIslandLook(false);
             ExpandedPanel.CornerRadius = new CornerRadius(26);
             ExpandedPanel.BorderThickness = new Thickness(1);
             ExpandedPanel.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
@@ -838,7 +970,20 @@ public partial class MainWindow : Window
 
     private StackPanel GroupLabel(ToolGroup group)
     {
-        return Ui.NavLabel(group.Glyph, group.Name);
+        if (!IslandStyle) return Ui.NavLabel(group.Glyph, group.Name);
+        // Igual às abas da Dynamic Island: ícone pequeno + nome, tudo em branco.
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(new TextBlock
+        {
+            Text = group.Glyph,
+            FontFamily = (FontFamily)Application.Current.Resources["IconFont"],
+            FontSize = 14,
+            Foreground = Brushes.White,
+            Margin = new Thickness(0, 0, 10, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.Children.Add(new TextBlock { Text = group.Name, FontSize = 13, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center });
+        return row;
     }
 
     private void SelectGroup(ToolGroup? group, string? toolName = null)
@@ -874,7 +1019,9 @@ public partial class MainWindow : Window
             _groupViews[group] = view;
         }
 
+        var changed = !ReferenceEquals(ToolHost.Content, view);
         ToolHost.Content = view;
+        if (changed && IslandStyle && _expanded) PopIn(ToolHost, 0);
         if (_pendingTool is { } name && group.Tools.Any(t => t.Name == name)) view.Show(name);
         else view.EnsureShown();
         _pendingTool = null;
