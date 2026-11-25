@@ -204,6 +204,69 @@ public partial class MainWindow : Window
         _morph = new Spring(5, ApplyMorph);
     }
 
+    // ---------- Painel no topo igual à ilha ----------
+
+    /// <summary>Tamanho das "orelhas" curvas que ligam o painel à borda de cima (igual à ilha).</summary>
+    private const double Ear = 12;
+    private System.Windows.Shapes.Path? _leftEar;
+    private System.Windows.Shapes.Path? _rightEar;
+
+    /// <summary>Com o painel no topo ele é igual à Dynamic Island: preto, grudado no topo, com orelhas.</summary>
+    private bool IslandStyle => _settings.Edge == DockEdge.Top;
+
+    private void EnsureEars()
+    {
+        if (_leftEar is not null) return;
+        System.Windows.Shapes.Path Make(string data)
+        {
+            var ear = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse(data),
+                Fill = IslandBlack,
+                Width = Ear,
+                Height = Ear,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                IsHitTestVisible = false,
+            };
+            ear.SetBinding(VisibilityProperty, new System.Windows.Data.Binding(nameof(Visibility)) { Source = ExpandedPanel });
+            ((Grid)Content).Children.Add(ear);
+            return ear;
+        }
+        _leftEar = Make($"M0,0 L{Ear},0 L{Ear},{Ear} A{Ear},{Ear} 0 0 0 0,0 Z");
+        _rightEar = Make($"M{Ear},0 L0,0 L0,{Ear} A{Ear},{Ear} 0 0 1 {Ear},0 Z");
+    }
+
+    /// <summary>Põe as orelhas nos cantos de cima do painel (x/largura nas coordenadas do painel).</summary>
+    private void PlaceEars(double x, double width)
+    {
+        if (_leftEar is null || _rightEar is null) return;
+        var show = IslandStyle;
+        _leftEar.Opacity = _rightEar.Opacity = show ? 1 : 0;
+        if (!show) return;
+        var m = ExpandedPanel.Margin;
+        _leftEar.Margin = new Thickness(m.Left + x - Ear, m.Top, 0, 0);
+        _rightEar.Margin = new Thickness(m.Left + x + width, m.Top, 0, 0);
+    }
+
+    /// <summary>Retângulo com o topo reto (grudado na borda) e só os cantos de baixo arredondados.</summary>
+    private static Geometry TopGlued(Rect r, double radius)
+    {
+        radius = Math.Clamp(radius, 0, Math.Min(r.Width / 2, r.Height));
+        var g = new StreamGeometry();
+        using (var c = g.Open())
+        {
+            c.BeginFigure(new Point(r.Left, r.Top), true, true);
+            c.LineTo(new Point(r.Right, r.Top), false, false);
+            c.LineTo(new Point(r.Right, r.Bottom - radius), false, false);
+            c.ArcTo(new Point(r.Right - radius, r.Bottom), new Size(radius, radius), 0, false, SweepDirection.Clockwise, false, false);
+            c.LineTo(new Point(r.Left + radius, r.Bottom), false, false);
+            c.ArcTo(new Point(r.Left, r.Bottom - radius), new Size(radius, radius), 0, false, SweepDirection.Clockwise, false, false);
+        }
+        g.Freeze();
+        return g;
+    }
+
     /// <summary>Retângulo (nas coordenadas do painel) de onde o painel sai e para onde volta.</summary>
     private Rect PillRect(bool opening)
     {
@@ -253,6 +316,13 @@ public partial class MainWindow : Window
         _panelClip.RadiusX = _panelClip.RadiusY = radius;
         _coverClip.Rect = new Rect(local.X, local.Y + m.Top, local.Width, local.Height);
         _coverClip.RadiusX = _coverClip.RadiusY = radius;
+        if (IslandStyle)
+        {
+            // Igual à ilha: topo reto grudado na borda, cantos de baixo redondos e orelhas.
+            if (ExpandedPanel.Clip is not null) ExpandedPanel.Clip = TopGlued(local, radius);
+            if (_morphCover is not null) _morphCover.Clip = TopGlued(_coverClip.Rect, radius);
+            PlaceEars(x, w);
+        }
 
         // Quanto já abriu (0 = pílula, 1 = painel): o preto vai sumindo e o conteúdo aparece.
         var span = full.Height - _morphFrom.Height;
@@ -273,7 +343,8 @@ public partial class MainWindow : Window
         var m = ExpandedPanel.Margin;
         _morphCover!.Margin = new Thickness(m.Left, 0, m.Right, m.Bottom);
         _morphCover.CornerRadius = ExpandedPanel.CornerRadius;
-        var panelRadius = ExpandedPanel.CornerRadius.TopLeft;
+        var panelRadius = ExpandedPanel.CornerRadius.BottomLeft;
+        EnsureEars();
         _morphFull = new Rect(0, 0, Math.Max(1, Width - m.Left - m.Right), Math.Max(1, Height - m.Top - m.Bottom));
         var token = ++_panelAnimToken;
 
@@ -316,6 +387,7 @@ public partial class MainWindow : Window
                 PanelShadow.RenderTransform = Transform.Identity;
                 PanelShadow.Opacity = 1;
                 _morphCover!.Visibility = Visibility.Collapsed;
+                PlaceEars(0, _morphFull.Width);
                 onDone?.Invoke();
                 return;
             }
@@ -531,15 +603,31 @@ public partial class MainWindow : Window
     {
         // Painel flutuante estilo Mac: cantos arredondados nos quatro lados e um respiro da borda
         // da tela (a margem extra embaixo é o espaço da sombra).
-        ExpandedPanel.CornerRadius = new CornerRadius(26);
-        ExpandedPanel.BorderThickness = new Thickness(1);
-        Sidebar.CornerRadius = new CornerRadius(25, 0, 0, 25);
-        ExpandedPanel.Margin = _settings.Edge switch
+        if (IslandStyle)
         {
-            DockEdge.Top => new Thickness(16, 8, 16, 24),
-            DockEdge.Left => new Thickness(8, 12, 22, 24),
-            _ => new Thickness(22, 12, 8, 24),
-        };
+            // No topo o painel é a própria Dynamic Island aberta: preto, grudado na borda de cima
+            // (topo reto + orelhas curvas) e só os cantos de baixo arredondados.
+            ExpandedPanel.CornerRadius = new CornerRadius(0, 0, 30, 30);
+            ExpandedPanel.BorderThickness = new Thickness(0);
+            ExpandedPanel.Background = IslandBlack;
+            Sidebar.CornerRadius = new CornerRadius(0, 0, 0, 30);
+            ExpandedPanel.Margin = new Thickness(16, 0, 16, 24);
+        }
+        else
+        {
+            ExpandedPanel.CornerRadius = new CornerRadius(26);
+            ExpandedPanel.BorderThickness = new Thickness(1);
+            ExpandedPanel.SetResourceReference(Border.BackgroundProperty, "PanelBrush");
+            Sidebar.CornerRadius = new CornerRadius(25, 0, 0, 25);
+            ExpandedPanel.Margin = _settings.Edge switch
+            {
+                DockEdge.Left => new Thickness(8, 12, 22, 24),
+                _ => new Thickness(22, 12, 8, 24),
+            };
+        }
+        PanelShadow.CornerRadius = ExpandedPanel.CornerRadius;
+        EnsureEars();
+        PlaceEars(0, Math.Max(0, Width - ExpandedPanel.Margin.Left - ExpandedPanel.Margin.Right));
         switch (_settings.Edge)
         {
             case DockEdge.Top:
@@ -600,7 +688,10 @@ public partial class MainWindow : Window
         if (top)
         {
             // Encostado no topo; "Position" é a posição horizontal (0,5 = centro).
-            var centerX = area.Left + area.Width * position;
+            // Aberto com a ilha ligada: sai do meio do topo, exatamente debaixo dela.
+            var centerX = _expanded && MenuBar.MenuBarWindow.Current is not null
+                ? area.Left + area.Width / 2
+                : area.Left + area.Width * position;
             Left = Math.Clamp(centerX - width / 2, area.Left, area.Right - width);
             Top = area.Top;
         }
@@ -610,6 +701,8 @@ public partial class MainWindow : Window
             Top = Math.Clamp(centerY - height / 2, area.Top, area.Bottom - height);
             Left = _settings.Edge == DockEdge.Left ? area.Left : area.Right - width;
         }
+        if (_expanded && ExpandedPanel.Clip is null)
+            PlaceEars(0, Math.Max(0, width - ExpandedPanel.Margin.Left - ExpandedPanel.Margin.Right));
         HandleLayoutChanged?.Invoke();
     }
 
