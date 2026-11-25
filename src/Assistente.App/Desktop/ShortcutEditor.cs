@@ -82,6 +82,7 @@ internal static class ShortcutEditor
             {
                 switch (item.Kind)
                 {
+                    case "pasta":
                     case "app":
                         source = IconLoader.AppIcon(target.Text.Trim()) ?? Docking.Native.GetIcon(target.Text.Trim(), 256);
                         break;

@@ -400,10 +400,12 @@ internal sealed class DesktopWidgetWindow : Window
         var grid = new WrapPanel
         {
             HorizontalAlignment = HorizontalAlignment.Center,
-            Width = cellW * Math.Min(columns, items.Count + 1),
+            Width = cellW * Math.Clamp(items.Count, 1, columns),
         };
         for (var i = 0; i < items.Count; i++) grid.Children.Add(Shortcut(items[i], i, tile, cellW));
-        grid.Children.Add(AddTile(tile, cellW, items.Count == 0));
+        // O "+" só aparece com o widget vazio; depois, para adicionar: botão direito no widget,
+        // arrastar para ele ou pelas configurações.
+        if (items.Count == 0) grid.Children.Add(AddTile(tile, cellW, true));
         stack.Children.Add(grid);
 
         if (items.Count == 0)
@@ -426,6 +428,8 @@ internal sealed class DesktopWidgetWindow : Window
             Child = stack,
             MinWidth = 420,
         };
+        // Botão direito no espaço vazio do widget: adicionar atalhos.
+        panel.ContextMenu = AddMenu();
 
         var frame = new Grid { Margin = new Thickness(30) }; // espaço para a sombra
         if (NoPanel)
@@ -946,15 +950,25 @@ internal sealed class DesktopWidgetWindow : Window
         // Imagem escolhida pela pessoa vence o ícone normal.
         if (IconLoader.LoadFile(item.Image) is { } mine)
         {
-            host.Children.Add(Picture(mine, card ? Math.Round(size * 0.14) : Math.Round(size * 0.22)));
+            if (card && IconLoader.IsSolid(mine)) FillTile(face, host, mine, size);
+            else host.Children.Add(Picture(mine, card ? Math.Round(size * 0.14) : Math.Round(size * 0.22)));
             if (autoTint) Tint(face, IconColor(mine));
             return;
         }
         switch (item.Kind)
         {
             case "pasta":
-                host.Children.Add(Glyph("", Math.Round(size * (card ? 0.48 : 0.7)), Colors.White));
-                if (autoTint) Tint(face, Color.FromRgb(0x2E, 0x8B, 0xFF));
+                // O mesmo ícone de pasta do Explorer (pastas especiais, como Downloads, com o delas).
+                if (IconLoader.AppIcon(item.Target) is { } folder)
+                {
+                    host.Children.Add(Picture(folder));
+                    if (autoTint) Tint(face, IconColor(folder));
+                }
+                else
+                {
+                    host.Children.Add(Glyph("\uE8B7", Math.Round(size * (card ? 0.48 : 0.7)), Colors.White));
+                    if (autoTint) Tint(face, Color.FromRgb(0x2E, 0x8B, 0xFF));
+                }
                 break;
             case "site":
                 var name = DesktopWidget.SiteName(item.Target);
@@ -972,20 +986,33 @@ internal sealed class DesktopWidgetWindow : Window
         }
     }
 
+    /// <summary>A imagem cobre o quadrado inteiro, com os mesmos cantos arredondados.</summary>
+    private static void FillTile(Border face, Grid host, ImageSource img, double size)
+    {
+        var inner = size - face.BorderThickness.Left * 2;
+        host.Width = host.Height = inner;
+        // A sombra do ícone não faz sentido com a imagem ocupando tudo.
+        if (host.Parent is Grid layers)
+            foreach (var r in layers.Children.OfType<Rectangle>()) r.Visibility = Visibility.Collapsed;
+        var image = Picture(img, Math.Max(0, face.CornerRadius.TopLeft - face.BorderThickness.Left));
+        image.Stretch = Stretch.UniformToFill;
+        host.Children.Add(image);
+    }
+
     private async Task LoadSiteIcon(Border face, Grid host, UIElement placeholder, string url, double size, bool card, bool autoTint)
     {
         if (await DesktopWidget.FaviconAsync(url) is not { } img) return;
         host.Children.Remove(placeholder);
-        if (card)
+        if (card && IconLoader.IsSolid(img))
         {
-            // Favicon num "selo" branco arredondado: fica nítido sobre o quadrado colorido.
-            host.Children.Add(new Border
-            {
-                CornerRadius = new CornerRadius(Math.Round(size * 0.18)),
-                Background = Brushes.White,
-                Child = Picture(img),
-                Padding = new Thickness(Math.Round(size * 0.07)),
-            });
+            // Ícone "de app" do site (quadrado, sem transparência): ocupa o quadrado inteiro.
+            // Antes ia num selo branco menor, e ficava pequeno e com borda branca.
+            FillTile(face, host, img, size);
+        }
+        else if (card)
+        {
+            // Logo com fundo transparente: grande, direto sobre o quadrado colorido.
+            host.Children.Add(Picture(img));
         }
         else
         {
@@ -1106,12 +1133,7 @@ internal sealed class DesktopWidgetWindow : Window
         label.Opacity = 0.9;
         var cell = Cell(face, label, cellW, size);
 
-        var menu = new ContextMenu();
-        menu.Items.Add(MenuItem("Aplicativo ou arquivo…", AddApp));
-        menu.Items.Add(MenuItem("Pasta…", AddFolder));
-        menu.Items.Add(MenuItem("Site…", AddSite));
-        menu.Items.Add(new Separator());
-        menu.Items.Add(MenuItem("Configurar a tela personalizada…", () => SettingsWindow.Open("Tela personalizada")));
+        var menu = AddMenu();
         cell.ContextMenu = menu;
         cell.MouseLeftButtonUp += (_, _) =>
         {
@@ -1120,6 +1142,17 @@ internal sealed class DesktopWidgetWindow : Window
             menu.IsOpen = true;
         };
         return cell;
+    }
+
+    private ContextMenu AddMenu()
+    {
+        var menu = new ContextMenu();
+        menu.Items.Add(MenuItem("Adicionar aplicativo ou arquivo…", AddApp));
+        menu.Items.Add(MenuItem("Adicionar pasta…", AddFolder));
+        menu.Items.Add(MenuItem("Adicionar site…", AddSite));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(MenuItem("Configurar a tela personalizada…", () => SettingsWindow.Open("Tela personalizada")));
+        return menu;
     }
 
     private void AddApp() => DesktopWidget.AddAppDialog(_settings);
