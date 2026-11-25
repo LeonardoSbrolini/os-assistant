@@ -37,6 +37,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         var settings = AppSettings.Load();
+        Avatars.PhotoPath = settings.AvatarPhoto;
         var window = new MainWindow(settings);
         MainWindow = window;
         window.Show();

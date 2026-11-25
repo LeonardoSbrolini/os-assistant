@@ -58,7 +58,6 @@ internal sealed class RadialMenu : Window
         new("", "Reduzir 50%", ResizeImages),
         new("\uE91B", "Remover fundo", RemoveBackground),
         new("", "Copiar caminho", CopyPaths),
-        new("", "Bandeja", AddToTray),
     };
 
     public static void ShowAt(int screenX, int screenY)

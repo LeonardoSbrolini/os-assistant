@@ -23,7 +23,14 @@ namespace Assistente.App.Docking;
 /// </summary>
 public sealed class DockWindow : Window
 {
-    public static DockWindow? Current { get; private set; }
+    /// <summary>O dock da tela principal (ou o primeiro, se a principal não tiver dock).</summary>
+    public static DockWindow? Current => All.FirstOrDefault(d => d._screen.Primary) ?? All.FirstOrDefault();
+
+    /// <summary>Um dock por tela escolhida (principal, todas ou uma específica).</summary>
+    private static readonly List<DockWindow> All = new();
+
+    private readonly System.Windows.Forms.Screen _screen;
+    private IntPtr _monitor;
 
     private const double ShelfPad = 6;
     private const double BottomMargin = 0;
@@ -67,9 +74,12 @@ public sealed class DockWindow : Window
     private DateTime _lastBarChange;
     private DateTime _revealedAt = DateTime.MinValue;
 
-    private DockWindow(AppSettings settings)
+    private DockWindow(AppSettings settings, System.Windows.Forms.Screen screen)
     {
         _settings = settings;
+        _screen = screen;
+        var b = screen.Bounds;
+        _monitor = Native.MonitorOf(new Rect(b.X, b.Y, b.Width, b.Height));
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -134,6 +144,7 @@ public sealed class DockWindow : Window
         };
         Closed += (_, _) =>
         {
+            All.Remove(this);
             _refresh.Stop();
             _watch.Stop();
             StopAnimating();
@@ -157,28 +168,53 @@ public sealed class DockWindow : Window
     public static void Apply(AppSettings settings)
     {
         ApplyTaskbar(settings);
+        if (!_listening)
+        {
+            _listening = true;
+            ScreenChoice.OnChanged(() => { if (All.Count > 0) Apply(settings, rebuild: true); });
+        }
+        Apply(settings, rebuild: false);
+    }
+
+    private static bool _listening;
+
+    private static void Apply(AppSettings settings, bool rebuild)
+    {
         if (!settings.DockEnabled)
         {
-            Current?.Close();
-            Current = null;
+            foreach (var d in All.ToList()) d.Close();
+            All.Clear();
             return;
         }
-        if (Current is null)
+        // Telas escolhidas mudaram (ou uma tela foi ligada/desligada): refaz os docks.
+        var targets = ScreenChoice.Targets(settings.DockScreens);
+        var want = string.Join("|", targets.Select(t => t.DeviceName + t.Bounds));
+        var have = string.Join("|", All.Select(d => d._screen.DeviceName + d._screen.Bounds));
+        if (rebuild || want != have)
         {
-            Current = new DockWindow(settings);
-            Current.Show();
-            Current._refresh.Start();
-            Current._watch.Start();
+            foreach (var d in All.ToList()) d.Close();
+            All.Clear();
+            foreach (var screen in targets)
+            {
+                var dock = new DockWindow(settings, screen);
+                All.Add(dock);
+                dock.Show();
+                dock._refresh.Start();
+                dock._watch.Start();
+            }
         }
-        Current._signature = "";
-        Current.RefreshApps();
+        foreach (var d in All)
+        {
+            d._signature = "";
+            d.RefreshApps();
+        }
     }
 
     /// <summary>Ao sair do Assistente: tira a reserva de espaço e devolve a barra do Windows.</summary>
     public static void Shutdown(AppSettings settings)
     {
-        Current?.Close();
-        Current = null;
+        foreach (var d in All.ToList()) d.Close();
+        All.Clear();
         RestoreTaskbar(settings);
     }
 
@@ -272,7 +308,7 @@ public sealed class DockWindow : Window
         try { windows = await Task.Run(Native.GetOpenWindows); }
         catch (Exception) { windows = new(); }
         finally { _refreshing = false; }
-        if (Current != this) return;
+        if (!All.Contains(this)) return;
 
         var entries = new List<DockItem> { DockItem.StartButton() };
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -380,7 +416,7 @@ public sealed class DockWindow : Window
 
         var dpi = VisualTreeHelper.GetDpi(this);
         double bottom;
-        if (HideMode == "nunca" && _hwnd != IntPtr.Zero)
+        if (HideMode == "nunca" && _hwnd != IntPtr.Zero && _screen.Primary)
         {
             // Sempre visível: reserva o espaço (janelas maximizadas param acima do dock).
             var barPx = (int)Math.Ceiling((s + DockItem.DotSpace + 2 * ShelfPad + BottomMargin + 2) * dpi.DpiScaleY);
@@ -399,10 +435,10 @@ public sealed class DockWindow : Window
             _appBar = false;
             _barRect = null;
             // Encosta na borda de baixo da tela (por cima da barra do Windows quando aparece).
-            bottom = SystemParameters.PrimaryScreenHeight;
+            bottom = _screen.Bounds.Bottom / dpi.DpiScaleY;
         }
 
-        Left = (SystemParameters.PrimaryScreenWidth - width) / 2;
+        Left = (_screen.Bounds.Left + _screen.Bounds.Width / 2.0) / dpi.DpiScaleX - width / 2;
         Top = bottom - height;
         if (HideMode == "nunca") Reveal(true, animate: false);
         else if (!_placedOnce) Reveal(false, animate: false); // começa escondido: só aparece com o mouse embaixo
@@ -611,14 +647,11 @@ public sealed class DockWindow : Window
         var shelfRight = shelfLeft + _shelf.ActualWidth * dpi.DpiScaleX;
         var dockTop = (Top + Height - BottomMargin - _shelf.ActualHeight) * dpi.DpiScaleY;
         var dockBottom = (Top + Height) * dpi.DpiScaleY;
-        var fullscreen = Native.IsForegroundFullscreen();
+        // Cada tela decide sozinha: o que acontece na outra tela não mostra nem esconde este dock.
+        var fullscreen = Native.IsFullscreenOn(_monitor);
 
-        // A janela da frente encosta no dock? (na área de trabalho não há janela: o dock fica à vista)
-        bool Covered()
-        {
-            var rect = Native.ForegroundAppRect();
-            return rect is { } r && r.Right > shelfLeft && r.Left < shelfRight && r.Bottom > dockTop && r.Top < dockBottom;
-        }
+        // Alguma janela desta tela encosta no dock? (sem janela por cima, o dock fica à vista)
+        bool Covered() => Native.AnyWindowTouches(_monitor, new Rect(shelfLeft, dockTop, Math.Max(1, shelfRight - shelfLeft), Math.Max(1, dockBottom - dockTop)));
 
         if (_hidden)
         {

@@ -27,7 +27,14 @@ public sealed class MenuBarWindow : Window
 {
     public const double BarHeight = 34;
 
-    public static MenuBarWindow? Current { get; private set; }
+    /// <summary>A ilha da tela principal (o painel do assistente "sai" dela). Nula se a principal não tiver ilha.</summary>
+    public static MenuBarWindow? Current => All.FirstOrDefault(w => w._screen.Primary);
+
+    /// <summary>Uma ilha por tela escolhida (principal, todas ou uma específica).</summary>
+    private static readonly List<MenuBarWindow> All = new();
+
+    private readonly Forms.Screen _screen;
+    private readonly IntPtr _monitor;
 
     private static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
 
@@ -70,9 +77,12 @@ public sealed class MenuBarWindow : Window
     private DateTime _wantHideSince = DateTime.MaxValue;
     private static string? _cpuName;
 
-    private MenuBarWindow(AppSettings settings)
+    private MenuBarWindow(AppSettings settings, Forms.Screen screen)
     {
         _settings = settings;
+        _screen = screen;
+        var sb = screen.Bounds;
+        _monitor = Native.MonitorOf(new Rect(sb.X, sb.Y, sb.Width, sb.Height));
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -99,8 +109,6 @@ public sealed class MenuBarWindow : Window
         _bar.CornerRadius = CompactCorners;
         _bar.Padding = new Thickness(10, 0, 10, 0);
         _bar.ClipToBounds = true;
-        _bar.AllowDrop = true;
-        _bar.Drop += OnIslandDrop;
 
         _compact.Height = BarHeight - 2;
         _compact.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -145,17 +153,18 @@ public sealed class MenuBarWindow : Window
 
         BuildLeft();
 
-        _timerItem = Item(Row(_timerGlyph, _timerText), TimerPopover);
-        _musicItem = Item(Row(Glyph(""), _musicText), MusicPopover);
-        _netItem = Item(Row(Glyph(""), _netText), NetworkPopover);
+        // Cada item abre o menu dele: timer → Tempo, música → Início, CPU/memória/bateria → Sistema.
+        _timerItem = Item(Row(_timerGlyph, _timerText), () => OpenTab("tempo"));
+        _musicItem = Item(Row(Glyph(""), _musicText), () => OpenTab("inicio"));
+        _netItem = Item(Row(Glyph(""), _netText), () => OpenTab("sistema"));
         var cpuLabel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) };
         cpuLabel.Children.Add(Text("CPU", 8.5, bold: true));
         cpuLabel.Children.Add(_cpuText);
         _cpuText.FontWeight = FontWeights.SemiBold;
-        _cpuItem = Item(Row(_cpuSpark, cpuLabel), CpuPopover);
-        _ramItem = Item(Row(Glyph(""), _ramText), CpuPopover);
-        _batteryItem = Item(Row(_batteryGlyph, _batteryText), BatteryPopover);
-        _clockItem = Item(Row(Glyph(""), _clockText), CalendarPopover);
+        _cpuItem = Item(Row(_cpuSpark, cpuLabel), () => OpenTab("sistema"));
+        _ramItem = Item(Row(Glyph(""), _ramText), () => OpenTab("sistema"));
+        _batteryItem = Item(Row(_batteryGlyph, _batteryText), () => OpenTab("sistema"));
+        _clockItem = Item(Row(Glyph(""), _clockText), null);
         CalendarPopup.Attach(_clockItem);
         foreach (var item in new[] { _timerItem, _musicItem, _cpuItem, _batteryItem, _clockItem })
             _right.Children.Add(item);
@@ -188,6 +197,7 @@ public sealed class MenuBarWindow : Window
         };
         Closed += (_, _) =>
         {
+            All.Remove(this);
             ReleaseSpace();
             _watch.Stop();
             _popover.Close();
@@ -202,35 +212,69 @@ public sealed class MenuBarWindow : Window
 
     // ---------- Ligar / desligar ----------
 
-    public static void Apply(AppSettings settings)
+    public static void Apply(AppSettings settings) => Apply(settings, rebuild: false);
+
+    private static bool _listening;
+
+    private static void Apply(AppSettings settings, bool rebuild)
     {
+        if (!_listening)
+        {
+            _listening = true;
+            ScreenChoice.OnChanged(() => { if (All.Count > 0) Apply(settings, rebuild: true); });
+        }
         if (!settings.MenuBarEnabled)
         {
-            Current?.Close();
-            Current = null;
+            foreach (var w in All.ToList()) w.Close();
+            All.Clear();
             return;
         }
-        if (Current is not null) return;
-        Current = new MenuBarWindow(settings);
-        Current.Place();
-        Current.Show();
-        Current.Update();
-        Current.UpdateTimer();
-        Current.UpdateMusic();
-        Current._watch.Start();
-        Current.Loaded += (_, _) =>
+        var targets = ScreenChoice.Targets(settings.IslandScreens);
+        var want = string.Join("|", targets.Select(t => t.DeviceName + t.Bounds));
+        var have = string.Join("|", All.Select(w => w._screen.DeviceName + w._screen.Bounds));
+        if (!rebuild && want == have) return;
+        foreach (var w in All.ToList()) w.Close();
+        All.Clear();
+        foreach (var screen in targets)
         {
-            Current?.FitCompact();
-            Current?._popover.GoRest();
-        };
-        Current.BringAvatarToFront();
+            var w = new MenuBarWindow(settings, screen);
+            All.Add(w);
+            w.Place();
+            w.Show();
+            w.Update();
+            w.UpdateTimer();
+            w.UpdateMusic();
+            w._watch.Start();
+            w.Loaded += (_, _) =>
+            {
+                w.FitCompact();
+                w._popover.GoRest();
+            };
+            w.BringAvatarToFront();
+        }
     }
 
     /// <summary>Mudou algo da barra de menus ou da ilha nas Configurações.</summary>
     public static void Reconfigure()
     {
-        var w = Current;
-        if (w is null) return;
+        foreach (var w in All.ToList()) w.Reconfigure1();
+    }
+
+    /// <summary>Avatar trocado: refaz o avatar da ilha em todas as telas.</summary>
+    public static void RefreshAvatar()
+    {
+        foreach (var w in All.ToList())
+        {
+            w._left.Children.Clear();
+            w.BuildLeft();
+            w.FitCompact();
+            if (w._popover.IsOpen) w._popover.Reflow();
+        }
+    }
+
+    private void Reconfigure1()
+    {
+        var w = this;
         var want = w._settings.TopBarEnabled && w._onDesktop;
         w._topBarShown = !want; // força reaplicar
         w.ShowTopBar(want);
@@ -296,7 +340,10 @@ public sealed class MenuBarWindow : Window
     {
         if (_hwnd == IntPtr.Zero) _hwnd = new WindowInteropHelper(this).EnsureHandle();
         ReleaseSpace(); // versões antigas reservavam a faixa do topo
-        var area = SystemParameters.WorkArea;
+        // Fica no topo da tela escolhida (DIPs a partir dos pixels da tela).
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var wa = _screen.WorkingArea;
+        var area = new Rect(wa.Left / dpi.DpiScaleX, wa.Top / dpi.DpiScaleY, wa.Width / dpi.DpiScaleX, wa.Height / dpi.DpiScaleY);
         // Largura da tela inteira: a barra de menus vai de ponta a ponta (a parte transparente
         // da janela deixa o clique passar para o que está embaixo).
         Width = area.Width;
@@ -332,7 +379,7 @@ public sealed class MenuBarWindow : Window
     {
         try
         {
-            Current?.ReleaseSpace();
+            foreach (var w in All) w.ReleaseSpace();
         }
         catch (Exception)
         {
@@ -363,32 +410,39 @@ public sealed class MenuBarWindow : Window
 
     private void BuildLeft()
     {
+        // Avatar: abre a ilha na página inicial (onde fica o avatar). Não abre as ferramentas.
         var logo = new Border
         {
-            Width = 16,
-            Height = 16,
-            CornerRadius = new CornerRadius(5),
-            Margin = new Thickness(0, 0, 8, 0),
+            Width = 20,
+            Height = 20,
+            CornerRadius = new CornerRadius(10),
             VerticalAlignment = VerticalAlignment.Center,
         };
         logo.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
-        if (Avatars.Find(_settings.Avatar)?.Image is { } avatar)
+        if (Avatars.Find(_settings.Avatar) is { } avatar)
         {
             logo.Background = Brushes.Transparent;
-            logo.Child = new Image { Source = avatar, Width = 18, Height = 18 };
+            logo.Child = Avatars.View(avatar, 20);
         }
+        var home = Item(logo, () => OpenTab("inicio"));
+        home.ToolTip = "Início";
+        _left.Children.Add(home);
 
-        logo.Margin = new Thickness(0);
-        logo.Width = logo.Height = 20;
-        logo.CornerRadius = new CornerRadius(10);
-        var home = Item(logo, AssistantPopover);
-        home.ToolTip = null;
-        home.MouseLeftButtonUp += (_, _) =>
+        // Ferramentas por escrito (no lugar do ícone): abre o painel de ferramentas.
+        var tools = Item(Text("Ferramentas", 12.5, bold: true), () =>
         {
             _popover.Close();
             MainWindow.Current?.ExpandPinned();
-        };
-        _left.Children.Add(home);
+        });
+        _left.Children.Add(tools);
+    }
+
+    /// <summary>Abre a ilha por completo direto numa aba.</summary>
+    private void OpenTab(string tab)
+    {
+        _tab = tab;
+        if (_popover.State == IslandState.Full) _popover.Reflow();
+        else _popover.Open();
     }
 
     // ---------- Atualizações ----------
@@ -460,7 +514,7 @@ public sealed class MenuBarWindow : Window
         var rect = new Rect(islandLeft * dpi.DpiScaleX, Top * dpi.DpiScaleY, _bar.ActualWidth * dpi.DpiScaleX, (_bar.ActualHeight + 4) * dpi.DpiScaleY);
         var (cx, cy) = Native.CursorPosition();
         // Com o painel do assistente aberto a ilha sai de cena (o painel "sai" dela).
-        if (MainWindow.Current?.IsExpanded == true)
+        if (ReferenceEquals(this, Current) && MainWindow.Current?.IsExpanded == true)
         {
             _wantHideSince = DateTime.MaxValue;
             if (!_hidden) Reveal(false);
@@ -475,15 +529,16 @@ public sealed class MenuBarWindow : Window
         // A ilha fica à vista e só sai de cena (com transição) quando uma janela encosta no topo,
         // onde ela fica (ex.: janela maximizada) ou em tela cheia — como o dock do Mac.
         var bar = _settings.TopBarEnabled;
-        var fullscreen = Native.IsForegroundFullscreen();
-        var fg = Native.ForegroundAppRect();
+        // Cada tela decide sozinha: clicar ou usar a outra tela não mostra a ilha desta.
+        var fullscreen = Native.IsFullscreenOn(_monitor);
+        var fg = Native.FrontWindowOn(_monitor)?.Rect;
         var stripTop = Top * dpi.DpiScaleY;
         var stripBottom = stripTop + (BarHeight + 2) * dpi.DpiScaleY;
         var stripLeft = rect.Left - 4;
         var stripRight = rect.Right + 4;
-        var touchesTop = fg is { } r && r.Width > 0 && r.Top < stripBottom && r.Bottom > stripTop && r.Right > stripLeft && r.Left < stripRight;
-        // "Área de trabalho" de verdade: nenhum app na frente (clicou no fundo, Win+D, tudo minimizado).
-        var desktop = !fullscreen && Native.IsDesktopForeground();
+        var touchesTop = Native.AnyWindowTouches(_monitor, new Rect(stripLeft, stripTop, Math.Max(1, stripRight - stripLeft), Math.Max(1, stripBottom - stripTop)));
+        // "Área de trabalho" de verdade nesta tela: nenhum app aberto nela, ou clicou no fundo (Win+D).
+        var desktop = !fullscreen && Native.IsDesktopOn(_monitor);
         var onDesktop = desktop;
         // Espaço para a ilha ficar aberta embaixo do topo sem cobrir a janela da frente.
         var centerX = (Left + Width / 2) * dpi.DpiScaleX;
@@ -833,22 +888,6 @@ public sealed class MenuBarWindow : Window
                 // Passar o mouse abre do jeito escolhido (um pouco ou tudo); clicar abre tudo.
                 if (State != IslandState.Full && State != HoverState) _open.Start();
             };
-            // Arrastando um arquivo até a ilha: abre direto na Bandeja.
-            _w._bar.DragEnter += (_, _) =>
-            {
-                _w._dragging = true;
-                _close.Stop();
-                if (State != IslandState.Full || _w._tab != "bandeja")
-                {
-                    _w._tab = "bandeja";
-                    if (State == IslandState.Full) Reflow(); else Open();
-                }
-            };
-            _w._bar.DragLeave += (_, _) =>
-            {
-                _w._dragging = false;
-                _close.Start();
-            };
         }
 
         public IslandState State { get; private set; } = IslandState.Closed;
@@ -1018,7 +1057,7 @@ public sealed class MenuBarWindow : Window
         Grid.SetColumn(right, 2);
         grid.Children.Add(right);
 
-        var avatar = Avatars.Find(_settings.Avatar)?.Image;
+        var avatar = Avatars.Find(_settings.Avatar);
         return (grid, () =>
         {
             var now = DateTime.Now;
@@ -1043,7 +1082,7 @@ public sealed class MenuBarWindow : Window
                     : Capital(now.ToString("dddd, d 'de' MMMM", PtBr));
                 play.Visibility = Visibility.Collapsed;
                 pic.Background = Brushes.Transparent;
-                if (pic.Child is null && avatar is not null) pic.Child = new Image { Source = avatar, Width = 38, Height = 38 };
+                if (pic.Child is null && avatar is not null) pic.Child = Avatars.View(avatar, 38);
             }
         });
     }
@@ -1173,12 +1212,26 @@ public sealed class MenuBarWindow : Window
         headerClock.Margin = new Thickness(0, 0, 10, 0);
         CalendarPopup.Attach(headerClock);
         right.Children.Add(headerClock);
-        right.Children.Add(new Widgets.PillButton("", () => { _popover.Close(); MainWindow.Current?.ExpandPinned(); }, false, 28) { ToolTip = "Abrir o assistente" });
+        // Ferramentas por escrito (sem ícone).
+        var toolsPill = new Border
+        {
+            Padding = new Thickness(12, 5, 12, 5),
+            Margin = new Thickness(0, 0, 6, 0),
+            CornerRadius = new CornerRadius(14),
+            Cursor = Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+            Child = Text("Ferramentas", 12.5, bold: true),
+        };
+        toolsPill.MouseEnter += (_, _) => toolsPill.Background = new SolidColorBrush(Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF));
+        toolsPill.MouseLeave += (_, _) => toolsPill.Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF));
+        toolsPill.MouseLeftButtonUp += (_, e) => { e.Handled = true; _popover.Close(); MainWindow.Current?.ExpandPinned(); };
+        right.Children.Add(toolsPill);
         right.Children.Add(new Widgets.PillButton("", () => { _popover.Close(); SettingsWindow.Open(); }, false, 28) { ToolTip = "Configurações" });
         DockPanel.SetDock(right, Dock.Right);
         header.Children.Add(right);
         var tabs = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (key, glyph, text) in new[] { ("inicio", "", "Início"), ("bandeja", "", "Bandeja"), ("sistema", "", "Sistema"), ("tempo", "\uE916", "Tempo") })
+        foreach (var (key, glyph, text) in new[] { ("inicio", "", "Início"), ("copiados", "\uE8C8", "Copiados"), ("sistema", "", "Sistema"), ("tempo", "\uE916", "Tempo") })
         {
             var selected = _tab == key;
             var icon = Glyph(glyph);
@@ -1210,7 +1263,7 @@ public sealed class MenuBarWindow : Window
 
         (UIElement View, Action? Update) body = _tab switch
         {
-            "bandeja" => TrayView(),
+            "copiados" => ClipView(),
             "sistema" => SystemView(),
             "tempo" => TimeView(),
             _ => HomeView(),
@@ -1302,13 +1355,18 @@ public sealed class MenuBarWindow : Window
         }
         grid.Children.Add(first);
 
-        // Coluna 2: semana
+        // Coluna 2: calendário da semana, com a hora no começo.
         var week = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var monthRow = new DockPanel();
-        var month = Text(Capital(DateTime.Now.ToString("MMM", PtBr).TrimEnd('.')), 22, bold: true);
-        month.Margin = new Thickness(0, 0, 14, 0);
-        DockPanel.SetDock(month, Dock.Left);
-        monthRow.Children.Add(month);
+        var weekClock = Text(DateTime.Now.ToString("HH:mm", PtBr), 22, bold: true);
+        weekClock.Margin = new Thickness(0, -2, 10, 0);
+        DockPanel.SetDock(weekClock, Dock.Left);
+        monthRow.Children.Add(weekClock);
+        var month = Text(Capital(DateTime.Now.ToString("MMM", PtBr).TrimEnd('.')), 11, bold: true);
+        month.Opacity = 0.6;
+        month.Margin = new Thickness(0, 0, 0, 6);
+        week.Children.Add(month);
+        update += () => weekClock.Text = DateTime.Now.ToString("HH:mm", PtBr);
         var days = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = 7 };
         var today = DateTime.Today;
         for (var i = -3; i <= 3; i++)
@@ -1335,7 +1393,7 @@ public sealed class MenuBarWindow : Window
         week.Children.Add(monthRow);
         var sub = Muted(Capital(DateTime.Now.ToString("dddd, d 'de' MMMM", PtBr)));
         sub.HorizontalAlignment = HorizontalAlignment.Center;
-        sub.Margin = new Thickness(0, 10, 0, 0);
+        sub.Margin = new Thickness(0, 6, 0, 0);
         week.Children.Add(sub);
         var weekCard = Card(week);
         weekCard.Cursor = Cursors.Hand;
@@ -1343,9 +1401,9 @@ public sealed class MenuBarWindow : Window
         Grid.SetColumn(weekCard, 1);
         grid.Children.Add(weekCard);
 
-        // Coluna 3: avatar (abre o assistente)
-        var avatar = new Border { Width = 70, Height = 70, CornerRadius = new CornerRadius(35), Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Abrir o assistente" };
-        if (Avatars.Find(_settings.Avatar)?.Image is { } img) avatar.Background = new ImageBrush(img) { Stretch = Stretch.UniformToFill };
+        // Coluna 3: avatar (abre a escolha de avatar: personagens, animados ou sua foto)
+        var avatar = new Border { Width = 70, Height = 70, CornerRadius = new CornerRadius(35), Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Trocar avatar" };
+        if (Avatars.Find(_settings.Avatar) is { } chosen) avatar.Child = Avatars.View(chosen, 70);
         else
         {
             avatar.SetResourceReference(Border.BackgroundProperty, "AccentBrush");
@@ -1355,7 +1413,7 @@ public sealed class MenuBarWindow : Window
             g.HorizontalAlignment = HorizontalAlignment.Center;
             avatar.Child = g;
         }
-        avatar.MouseLeftButtonUp += (_, _) => { _popover.Close(); MainWindow.Current?.ExpandPinned(); };
+        avatar.MouseLeftButtonUp += (_, e) => { e.Handled = true; ShowAvatarPicker(avatar); };
         var avatarCard = Card(avatar);
         avatarCard.Margin = new Thickness(0);
         avatarCard.Padding = new Thickness(14);
@@ -1365,101 +1423,148 @@ public sealed class MenuBarWindow : Window
         return (grid, update);
     }
 
-    // Bandeja: arquivos arrastados para a ilha (como uma prateleira)
-    private (UIElement, Action?) TrayView()
-    {
-        var items = _settings.IslandTray ??= new();
-        items.RemoveAll(p => !System.IO.File.Exists(p) && !System.IO.Directory.Exists(p));
+    // ---------- Escolher avatar (clique no avatar da ilha) ----------
 
-        var box = new Border
+    private System.Windows.Controls.Primitives.Popup? _avatarPopup;
+
+    private void ShowAvatarPicker(FrameworkElement anchor)
+    {
+        _avatarPopup?.SetCurrentValue(System.Windows.Controls.Primitives.Popup.IsOpenProperty, false);
+        var wrap = new WrapPanel { Width = 6 * 52 };
+        void Option(string? id, string name, Avatar? a)
         {
-            MinHeight = 108,
-            CornerRadius = new CornerRadius(18),
-            Padding = new Thickness(8),
-            BorderThickness = new Thickness(1.5),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(_dragging ? (byte)0x90 : (byte)0x30, 0xFF, 0xFF, 0xFF)),
-            Background = new SolidColorBrush(Color.FromArgb(0x0C, 0xFF, 0xFF, 0xFF)),
-        };
-        if (items.Count == 0)
-        {
-            var empty = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            var icon = Glyph("");
-            icon.FontSize = 22;
-            icon.HorizontalAlignment = HorizontalAlignment.Center;
-            icon.Margin = new Thickness(0, 0, 0, 6);
-            icon.Opacity = 0.6;
-            empty.Children.Add(icon);
-            var t = Muted("Arraste arquivos ou pastas até a ilha para deixar à mão");
-            t.TextAlignment = TextAlignment.Center;
-            empty.Children.Add(t);
-            box.Child = empty;
-        }
-        else
-        {
-            var wrap = new WrapPanel();
-            foreach (var path in items.ToList())
+            var selected = (_settings.Avatar ?? "") == (id ?? "");
+            FrameworkElement pic = a is not null ? Avatars.View(a, 40) : new Border
             {
-                var name = System.IO.Path.GetFileName(path.TrimEnd('\\'));
-                if (string.IsNullOrEmpty(name)) name = path;
-                var icon = Native.GetIcon(path, 48) is { } src ? (UIElement)new Image { Source = src, Width = 34, Height = 34 } : Glyph("");
-                var label = Text(name, 10.5);
-                label.TextTrimming = TextTrimming.CharacterEllipsis;
-                label.TextAlignment = TextAlignment.Center;
-                label.HorizontalAlignment = HorizontalAlignment.Center;
-                label.MaxWidth = 76;
-                label.Margin = new Thickness(0, 5, 0, 0);
-                var stack = new StackPanel();
-                if (icon is FrameworkElement fe) fe.HorizontalAlignment = HorizontalAlignment.Center;
-                stack.Children.Add(icon);
-                stack.Children.Add(label);
-                var tile = new Border { Width = 84, Padding = new Thickness(4, 8, 4, 6), CornerRadius = new CornerRadius(12), Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = path, Child = stack };
-                tile.MouseEnter += (_, _) => tile.Background = new SolidColorBrush(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF));
-                tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
-                var p = path;
-                Point? down = null;
-                tile.PreviewMouseLeftButtonDown += (_, e) => down = e.GetPosition(tile);
-                tile.MouseMove += (_, e) =>
-                {
-                    // Arrastar para fora da ilha (para uma pasta, e-mail etc.).
-                    if (down is not { } start || e.LeftButton != MouseButtonState.Pressed) return;
-                    var now = e.GetPosition(tile);
-                    if (Math.Abs(now.X - start.X) < 6 && Math.Abs(now.Y - start.Y) < 6) return;
-                    down = null;
-                    DragDrop.DoDragDrop(tile, new DataObject(DataFormats.FileDrop, new[] { p }), DragDropEffects.Copy);
-                };
-                tile.MouseLeftButtonUp += (_, _) =>
-                {
-                    if (down is null) return;
-                    down = null;
-                    _popover.Close();
-                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(p) { UseShellExecute = true }); } catch (Exception) { }
-                };
-                var menu = new ContextMenu();
-                var remove = new MenuItem { Header = "Tirar da bandeja" };
-                remove.Click += (_, _) => { items.Remove(p); _settings.Save(); _popover.Reflow(); };
-                menu.Items.Add(remove);
-                menu.Opened += (_, _) => _dragging = true;
-                menu.Closed += (_, _) => _dragging = false;
-                tile.ContextMenu = menu;
-                wrap.Children.Add(tile);
-            }
-            box.Child = wrap;
+                Width = 40,
+                Height = 40,
+                CornerRadius = new CornerRadius(20),
+                Child = Glyph("\uE76C"),
+            };
+            if (a is null) ((Border)pic).SetResourceReference(Border.BackgroundProperty, "AccentBrush");
+            var cell = new Border
+            {
+                Width = 48,
+                Height = 48,
+                Margin = new Thickness(2),
+                CornerRadius = new CornerRadius(24),
+                BorderThickness = new Thickness(2),
+                Cursor = Cursors.Hand,
+                ToolTip = name,
+                Child = pic,
+            };
+            if (selected) cell.SetResourceReference(Border.BorderBrushProperty, "AccentBrush");
+            else cell.BorderBrush = Brushes.Transparent;
+            cell.MouseEnter += (_, _) => Anim.Pop(pic);
+            cell.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                ChooseAvatar(id);
+            };
+            wrap.Children.Add(cell);
         }
-        return (box, null);
+        Option(null, "Sem avatar", null);
+        if (Avatars.Photo is { } photo) Option(Avatars.PhotoId, "Minha foto", photo);
+        foreach (var a in Avatars.All) Option(a.Id, a.Name + (a.IsAnimated ? " (animado)" : ""), a);
+
+        var photoButton = Ui.Btn("Usar minha foto…", () => PickPhoto(), primary: true);
+        var more = Ui.Btn("Mais opções", () =>
+        {
+            if (_avatarPopup is not null) _avatarPopup.IsOpen = false;
+            _popover.Close();
+            SettingsWindow.Open("Avatar");
+        });
+        more.Margin = new Thickness(6, 0, 0, 0);
+        var buttons = Row(photoButton, more);
+        buttons.Margin = new Thickness(0, 10, 0, 0);
+
+        var content = Stack(Text("Escolha seu avatar", 14, bold: true), wrap, buttons);
+        ((FrameworkElement)content.Children[0]).Margin = new Thickness(2, 0, 0, 8);
+        var card = new Border
+        {
+            Padding = new Thickness(14),
+            CornerRadius = new CornerRadius(22),
+            Background = IslandBlack,
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
+            Child = content,
+        };
+        System.Windows.Documents.TextElement.SetForeground(card, Brushes.White);
+        _avatarPopup = new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = anchor,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            HorizontalOffset = -(6 * 52 + 28 - anchor.ActualWidth) / 2,
+            VerticalOffset = 18,
+            AllowsTransparency = true,
+            StaysOpen = false,
+            Child = card,
+        };
+        // Enquanto escolhe, a ilha não fecha.
+        _dragging = true;
+        _avatarPopup.Closed += (_, _) =>
+        {
+            _dragging = false;
+            if (!_bar.IsMouseOver) _popover.Close();
+        };
+        _avatarPopup.IsOpen = true;
+        card.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 160));
     }
 
-    private void OnIslandDrop(object sender, DragEventArgs e)
+    private void PickPhoto()
     {
-        _dragging = false;
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
+        if (_avatarPopup is not null) _avatarPopup.IsOpen = false;
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            var items = _settings.IslandTray ??= new();
-            foreach (var f in files)
-                if (!items.Contains(f, StringComparer.OrdinalIgnoreCase)) items.Add(f);
-            _settings.Save();
+            Title = "Escolha uma foto para o avatar",
+            Filter = "Imagens|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|Todos os arquivos|*.*",
+        };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            _settings.AvatarPhoto = Avatars.SavePhoto(dialog.FileName);
+            Avatars.PhotoPath = _settings.AvatarPhoto;
+            if (Avatars.Photo is null)
+            {
+                TrayIcon.Notify("Não deu para usar essa foto", "Escolha um arquivo de imagem (PNG ou JPG).");
+                return;
+            }
+            ChooseAvatar(Avatars.PhotoId);
         }
-        _tab = "bandeja";
-        if (_popover.IsOpen) _popover.Reflow(); else _popover.Open();
+        catch (Exception ex)
+        {
+            TrayIcon.Notify("Não deu para usar essa foto", ex.Message);
+        }
+    }
+
+    /// <summary>Troca o avatar e atualiza tudo que mostra ele (alça, ilha em todas as telas).</summary>
+    private void ChooseAvatar(string? id)
+    {
+        if (_avatarPopup is not null) _avatarPopup.IsOpen = false;
+        _settings.Avatar = id;
+        _settings.Save();
+        MainWindow.Current?.ApplySettings();
+        RefreshAvatar();
+    }
+
+    // Copiados: histórico do Ctrl+C (clique copia de novo).
+    private (UIElement, Action?) ClipView()
+    {
+        var header = new DockPanel { Margin = new Thickness(4, 0, 4, 8) };
+        var count = Muted("");
+        DockPanel.SetDock(count, Dock.Right);
+        header.Children.Add(count);
+        header.Children.Add(Text("Clique em um item para copiar de novo", 12.5, bold: true));
+        var list = new ClipboardQuick(4, island: true);
+        list.MenuOpenChanged += open => _dragging = open;
+        var root = new StackPanel();
+        root.Children.Add(header);
+        root.Children.Add(list);
+        return (root, () =>
+        {
+            var n = ClipboardHistory.Instance.Entries.Count;
+            count.Text = n == 1 ? "1 item" : $"{n} itens";
+        });
     }
 
     private string _timeMode = "timer";
@@ -1701,7 +1806,7 @@ public sealed class MenuBarWindow : Window
 
     // ---------- Peças ----------
 
-    private Border Item(UIElement content, Func<(UIElement, Action?)>? popover)
+    private Border Item(UIElement content, Action? click)
     {
         var hover = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF));
         var item = new Border
@@ -1716,6 +1821,12 @@ public sealed class MenuBarWindow : Window
         };
         item.MouseEnter += (_, _) => item.Background = hover;
         item.MouseLeave += (_, _) => item.Background = Brushes.Transparent;
+        if (click is not null)
+            item.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                click();
+            };
         return item;
     }
 

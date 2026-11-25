@@ -202,6 +202,15 @@ public sealed class AppSettings
     /// <summary>Em qual tela: "principal", "todas" ou o nome da tela do Windows (\\.\DISPLAY2).</summary>
     public string DesktopWidgetScreen { get; set; } = "principal";
 
+    /// <summary>Em quais telas o dock aparece: "principal", "todas" ou o nome de uma tela (\\.\DISPLAY2).</summary>
+    public string DockScreens { get; set; } = "principal";
+
+    /// <summary>Em quais telas a ilha do topo aparece: "principal", "todas" ou o nome de uma tela.</summary>
+    public string IslandScreens { get; set; } = "principal";
+
+    /// <summary>Foto escolhida para o avatar "Minha foto" (cópia guardada na pasta do app).</summary>
+    public string? AvatarPhoto { get; set; }
+
     /// <summary>Fundo do widget: "vidro" (liquid glass), "solido" ou "nenhum" (só os atalhos, direto no papel de parede).</summary>
     public string DesktopWidgetBackground { get; set; } = "vidro";
 
