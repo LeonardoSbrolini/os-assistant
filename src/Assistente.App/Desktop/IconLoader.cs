@@ -101,6 +101,37 @@ internal static class IconLoader
         return copy;
     }
 
+    /// <summary>
+    /// Imagem "cheia" (quadrada e sem transparência, como o ícone de app de um site ou uma foto):
+    /// deve ocupar o quadrado inteiro em vez de ficar pequena no meio.
+    /// </summary>
+    internal static bool IsSolid(ImageSource source)
+    {
+        try
+        {
+            if (source is not BitmapSource bmp || bmp.PixelWidth <= 0) return false;
+            var ratio = (double)bmp.PixelWidth / bmp.PixelHeight;
+            if (ratio < 0.8 || ratio > 1.25) return false;
+            BitmapSource small = bmp;
+            if (bmp.PixelWidth > 64)
+            {
+                var f = 64.0 / bmp.PixelWidth;
+                small = new TransformedBitmap(bmp, new ScaleTransform(f, f));
+            }
+            var conv = new FormatConvertedBitmap(small, PixelFormats.Bgra32, null, 0);
+            var px = new byte[conv.PixelWidth * conv.PixelHeight * 4];
+            conv.CopyPixels(px, conv.PixelWidth * 4, 0);
+            var solid = 0;
+            for (var i = 3; i < px.Length; i += 4) if (px[i] > 240) solid++;
+            // Cantos arredondados ainda contam como "cheio".
+            return solid >= px.Length / 4 * 0.86;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     // ---------- Apps, arquivos e pastas ----------
 
     private static readonly Dictionary<string, BitmapSource?> AppCache = new(StringComparer.OrdinalIgnoreCase);
@@ -282,7 +313,8 @@ internal static class IconLoader
         var file = CacheFile(host);
         if (File.Exists(file) && LoadFile(file) is { } saved) return saved;
 
-        var best = await FindSiteIcon(host, scheme).ConfigureAwait(false);
+        // Logo com muita margem transparente ficava pequeno: corta a sobra.
+        var best = Trim(await FindSiteIcon(host, scheme).ConfigureAwait(false));
         if (best is null) return null;
         try
         {
