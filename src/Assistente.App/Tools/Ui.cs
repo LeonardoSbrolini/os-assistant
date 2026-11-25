@@ -14,6 +14,38 @@ namespace Assistente.App.Tools;
 /// </summary>
 public static class Ui
 {
+    /// <summary>
+    /// Tira a sombra (Effect) de um cartão com texto e a coloca numa camada própria atrás dele.
+    /// Um efeito no cartão faz o WPF desenhar tudo como imagem, deixando o texto fosco/borrado.
+    /// </summary>
+    public static Grid LiftShadow(Border card)
+    {
+        var shadow = new Border
+        {
+            CornerRadius = card.CornerRadius,
+            Margin = card.Margin,
+            Width = card.Width,
+            HorizontalAlignment = card.HorizontalAlignment,
+            VerticalAlignment = card.VerticalAlignment,
+            Background = new SolidColorBrush(Color.FromRgb(0x0A, 0x0A, 0x0C)),
+            RenderTransform = card.RenderTransform,
+            RenderTransformOrigin = card.RenderTransformOrigin,
+            IsHitTestVisible = false,
+            Effect = card.Effect,
+        };
+        System.Windows.Data.BindingOperations.SetBinding(shadow, UIElement.OpacityProperty,
+            new System.Windows.Data.Binding(nameof(UIElement.Opacity)) { Source = card });
+        System.Windows.Data.BindingOperations.SetBinding(shadow, FrameworkElement.WidthProperty,
+            new System.Windows.Data.Binding(nameof(FrameworkElement.ActualWidth)) { Source = card });
+        System.Windows.Data.BindingOperations.SetBinding(shadow, FrameworkElement.HeightProperty,
+            new System.Windows.Data.Binding(nameof(FrameworkElement.ActualHeight)) { Source = card });
+        card.Effect = null;
+        var grid = new Grid();
+        grid.Children.Add(shadow);
+        grid.Children.Add(card);
+        return grid;
+    }
+
     public static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
 
     public static Brush Res(string key) => (Brush)Application.Current.Resources[key];

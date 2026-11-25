@@ -156,7 +156,7 @@ internal sealed class UpdateProgressWindow : Window
         body.Children.Add(_details);
         body.Children.Add(_action);
 
-        Content = new Border
+        Content = Ui.LiftShadow(new Border
         {
             CornerRadius = new CornerRadius(24),
             Background = Freeze(new SolidColorBrush(Color.FromRgb(0x0F, 0x0F, 0x12))),
@@ -166,7 +166,7 @@ internal sealed class UpdateProgressWindow : Window
             Margin = new Thickness(16),
             Effect = new DropShadowEffect { BlurRadius = 30, ShadowDepth = 6, Opacity = 0.55, Direction = 270 },
             Child = body,
-        };
+        });
 
         MouseLeftButtonDown += (_, e) =>
         {

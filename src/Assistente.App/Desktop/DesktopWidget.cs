@@ -411,7 +411,6 @@ internal sealed class DesktopWidgetWindow : Window
                 Foreground = new LinearGradientBrush(Colors.White, Color.FromRgb(0xE4, 0xEA, 0xF5), 90),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, -4, 0, 0),
-                Effect = TextShadow(strong: true),
             };
             _date = new TextBlock
             {
@@ -420,7 +419,6 @@ internal sealed class DesktopWidgetWindow : Window
                 Foreground = Brushes.White,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, -8, 0, 28),
-                Effect = TextShadow(strong: true),
             };
             // Clique na hora ou na data abre o calendário.
             CalendarPopup.Attach(_time);
@@ -452,7 +450,6 @@ internal sealed class DesktopWidgetWindow : Window
                 Opacity = 0.8,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 6, 0, 0),
-                Effect = TextShadow(),
             });
         }
 
@@ -465,6 +462,14 @@ internal sealed class DesktopWidgetWindow : Window
         };
 
         var frame = new Grid { Margin = new Thickness(30) }; // espaço para a sombra
+        // Sombra numa camada própria, atrás: efeito no painel inteiro deixava os textos foscos.
+        frame.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(38),
+            Background = Frozen(new SolidColorBrush(Color.FromArgb((byte)(GlassPanel ? 0x50 : 0xF0), 0x08, 0x08, 0x0C))),
+            IsHitTestVisible = false,
+            Effect = new DropShadowEffect { BlurRadius = 40, ShadowDepth = 8, Opacity = GlassPanel ? 0.4 : 0.5, Direction = 270 },
+        });
         if (GlassPanel)
         {
             _glassLayer = new Grid { IsHitTestVisible = false };
@@ -480,7 +485,6 @@ internal sealed class DesktopWidgetWindow : Window
             panel.BorderThickness = new Thickness(1);
         }
         frame.Children.Add(panel);
-        frame.Effect = new DropShadowEffect { BlurRadius = 40, ShadowDepth = 8, Opacity = GlassPanel ? 0.35 : 0.5, Direction = 270 };
         _root.Children.Add(frame);
 
         if (IsLoaded) Dispatcher.BeginInvoke(new Action(UpdateGlass), DispatcherPriority.Loaded);
@@ -494,16 +498,6 @@ internal sealed class DesktopWidgetWindow : Window
         var date = now.ToString("dddd, d 'de' MMMM", Ui.PtBr);
         _date.Text = char.ToUpper(date[0]) + date[1..];
     }
-
-    /// <summary>Sombra do texto: forte e curta, para ler bem em qualquer papel de parede.</summary>
-    private static Effect TextShadow(bool strong = false) => new DropShadowEffect
-    {
-        BlurRadius = strong ? 14 : 7,
-        ShadowDepth = strong ? 2 : 1.5,
-        Opacity = strong ? 0.6 : 0.9,
-        Direction = 270,
-        Color = Colors.Black,
-    };
 
     private static Brush Frozen(Brush b)
     {
@@ -757,7 +751,6 @@ internal sealed class DesktopWidgetWindow : Window
         MaxWidth = cellW - 6,
         Margin = new Thickness(0, 9, 0, 0),
         HorizontalAlignment = HorizontalAlignment.Center,
-        Effect = TextShadow(),
     };
 
     /// <summary>
@@ -1116,7 +1109,7 @@ internal static class InputDialog
         buttons.Children.Add(ok);
         stack.Children.Add(buttons);
 
-        window.Content = new Border
+        window.Content = Ui.LiftShadow(new Border
         {
             CornerRadius = new CornerRadius(20),
             Background = new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x17)),
@@ -1126,7 +1119,7 @@ internal static class InputDialog
             Margin = new Thickness(14),
             Effect = new DropShadowEffect { BlurRadius = 26, ShadowDepth = 4, Opacity = 0.55 },
             Child = stack,
-        };
+        });
         window.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) window.Close();

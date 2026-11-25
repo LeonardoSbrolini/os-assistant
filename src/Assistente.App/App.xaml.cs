@@ -23,6 +23,13 @@ public partial class App : Application
         }
         _singleInstance = mutex;
 
+        // Texto nítido em todas as janelas: modo "Display" alinha as letras aos pixels da tela
+        // (o padrão "Ideal" deixa o texto pequeno com cara de fosco/borrado).
+        System.Windows.Media.TextOptions.TextFormattingModeProperty.OverrideMetadata(typeof(Window),
+            new FrameworkPropertyMetadata(System.Windows.Media.TextFormattingMode.Display, FrameworkPropertyMetadataOptions.Inherits));
+        System.Windows.Media.TextOptions.TextHintingModeProperty.OverrideMetadata(typeof(Window),
+            new FrameworkPropertyMetadata(System.Windows.Media.TextHintingMode.Fixed, FrameworkPropertyMetadataOptions.Inherits));
+
         DispatcherUnhandledException += OnUnhandledException;
         // Se o app fechar de repente, devolve a barra de tarefas do Windows.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => RestoreTaskbarSafe();

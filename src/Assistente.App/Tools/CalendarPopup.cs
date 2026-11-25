@@ -205,7 +205,7 @@ public static class CalendarPopup
             AllowsTransparency = true,
             StaysOpen = false,
             PopupAnimation = PopupAnimation.None,
-            Child = card,
+            Child = Ui.LiftShadow(card),
         };
         var mine = _popup;
         _popup.Closed += (_, _) =>

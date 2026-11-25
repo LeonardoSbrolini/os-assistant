@@ -124,7 +124,7 @@ internal static class TrayPanel
             Placement = PlacementMode.Top,
             StaysOpen = false,
             PopupAnimation = PopupAnimation.None,
-            Child = card,
+            Child = Ui.LiftShadow(card),
         };
     }
 

@@ -147,8 +147,11 @@ public sealed class SettingsWindow : Window
             root.RenderTransformOrigin = new Point(0.5, 0.5);
             root.RenderTransform = scale;
             root.BeginAnimation(OpacityProperty, Anim.FromTo(0, 1, 220));
+            var grow = Anim.FromTo(0.96, 1, 260);
+            // Terminou de abrir: tira a escala para o texto ficar alinhado aos pixels (nítido).
+            grow.Completed += (_, _) => root.RenderTransform = Transform.Identity;
             scale.BeginAnimation(ScaleTransform.ScaleXProperty, Anim.FromTo(0.96, 1, 260));
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, Anim.FromTo(0.96, 1, 260));
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
         };
         KeyDown += (_, e) =>
         {
@@ -239,6 +242,8 @@ public sealed class SettingsWindow : Window
         return dot;
     }
 
+    private Border? _shadow;
+
     private FrameworkElement BuildChrome()
     {
         // Bolinhas estilo Mac (fechar / minimizar) e arrastar pela parte de cima.
@@ -300,7 +305,7 @@ public sealed class SettingsWindow : Window
         body.Children.Add(sidebar);
         body.Children.Add(right);
 
-        return _frame = new Border
+        _frame = new Border
         {
             CornerRadius = new CornerRadius(26),
             Background = WindowBlack,
@@ -308,8 +313,21 @@ public sealed class SettingsWindow : Window
             BorderBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF))),
             Child = body,
             Margin = new Thickness(14), // espaço para a sombra
+        };
+        // A sombra fica numa camada separada, atrás: um efeito na moldura deixaria todo o
+        // texto de dentro "fosco" (o WPF desenha tudo como imagem para aplicar o efeito).
+        _shadow = new Border
+        {
+            CornerRadius = new CornerRadius(26),
+            Background = WindowBlack,
+            Margin = new Thickness(14),
+            IsHitTestVisible = false,
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 26, ShadowDepth = 4, Opacity = 0.55 },
         };
+        var layers = new Grid();
+        layers.Children.Add(_shadow);
+        layers.Children.Add(_frame);
+        return layers;
     }
 
     // ---------- Tela cheia / janela ----------
@@ -345,7 +363,12 @@ public sealed class SettingsWindow : Window
             _frame.CornerRadius = new CornerRadius(fullscreen ? 0 : 26);
             _frame.Margin = new Thickness(fullscreen ? 0 : ShadowMargin);
             _frame.BorderThickness = new Thickness(fullscreen ? 0 : 1);
-            _frame.Effect = fullscreen ? null : new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 26, ShadowDepth = 4, Opacity = 0.55 };
+            if (_shadow is not null)
+            {
+                _shadow.Visibility = fullscreen ? Visibility.Collapsed : Visibility.Visible;
+                _shadow.Margin = _frame.Margin;
+                _shadow.CornerRadius = _frame.CornerRadius;
+            }
         }
         if (_sidebar is not null)
         {
