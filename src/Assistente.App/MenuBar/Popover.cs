@@ -46,7 +46,7 @@ public sealed class Popover
             AllowsTransparency = true,
             Placement = PlacementMode.Bottom,
             StaysOpen = true,
-            Child = _card,
+            Child = Ui.LiftShadow(_card),
             PopupAnimation = PopupAnimation.None,
         };
         _card.MouseEnter += (_, _) => _close.Stop();
