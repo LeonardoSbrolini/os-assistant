@@ -1067,13 +1067,14 @@ public sealed class SettingsWindow : Window
         }
         RenderScreens();
 
-        FrameworkElement StyleChoice(string group, string current, Action<string> set)
+        FrameworkElement StyleChoice(string group, string current, Action<string> set, (string Key, string Title, string Caption) none)
         {
             var row = new WrapPanel();
             foreach (var (key, title, caption) in new[]
             {
                 ("vidro", "Liquid glass", "Transparente e desfocado, mostra o papel de parede por trás."),
                 ("solido", "Sólido", "Escuro e firme, destaca bem os ícones."),
+                none,
             })
             {
                 var text = new StackPanel { Width = 230 };
@@ -1086,8 +1087,10 @@ public sealed class SettingsWindow : Window
             }
             return row;
         }
-        var background = Ui.Field("Fundo do widget", StyleChoice("deskBg", _settings.DesktopWidgetBackground, v => _settings.DesktopWidgetBackground = v));
-        var tiles = Ui.Field("Atalhos", StyleChoice("deskTiles", _settings.DesktopWidgetTiles, v => _settings.DesktopWidgetTiles = v));
+        var background = Ui.Field("Fundo do widget", StyleChoice("deskBg", _settings.DesktopWidgetBackground, v => _settings.DesktopWidgetBackground = v,
+            ("nenhum", "Sem fundo", "Só o relógio e os atalhos, direto no papel de parede.")));
+        var tiles = Ui.Field("Atalhos", StyleChoice("deskTiles", _settings.DesktopWidgetTiles, v => _settings.DesktopWidgetTiles = v,
+            ("nenhum", "Só o ícone", "Sem o quadrado atrás: aparece só o ícone, maior. Um atalho com cor escolhida continua com quadrado.")));
 
         var size = SliderRow("Tamanho dos atalhos", 64, 150, _settings.DesktopWidgetTileSize,
             v => $"{v:0} px", v => { _settings.DesktopWidgetTileSize = Math.Round(v); Desktop.DesktopWidget.Refresh(); });
@@ -1117,14 +1120,24 @@ public sealed class SettingsWindow : Window
                 var remove = Ui.Btn("Remover", () =>
                 {
                     _settings.DesktopShortcuts?.Remove(it);
+                    Desktop.IconLoader.DeleteImported(it.Image);
                     Refresh();
                     RenderItems();
                 });
                 remove.VerticalAlignment = VerticalAlignment.Center;
-                remove.Margin = new Thickness(12, 0, 0, 0);
+                remove.Margin = new Thickness(8, 0, 0, 0);
+                var edit = Ui.Btn("Editar", () =>
+                {
+                    if (Desktop.ShortcutEditor.Edit(_settings, it)) RenderItems();
+                });
+                edit.VerticalAlignment = VerticalAlignment.Center;
+                edit.Margin = new Thickness(12, 0, 0, 0);
+                var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                buttons.Children.Add(edit);
+                buttons.Children.Add(remove);
                 var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
-                DockPanel.SetDock(remove, System.Windows.Controls.Dock.Right);
-                row.Children.Add(remove);
+                DockPanel.SetDock(buttons, System.Windows.Controls.Dock.Right);
+                row.Children.Add(buttons);
                 row.Children.Add(text);
                 items.Children.Add(row);
             }
@@ -1141,7 +1154,7 @@ public sealed class SettingsWindow : Window
             Ui.Card("Estilo", "\uE790", background, tiles),
             Ui.Card("Tamanho", "", size, columns, clock),
             Ui.Card("Atalhos", "\uE71B", items, Ui.Inline(addApp, addFolder, addSite),
-                Ui.Caption("No próprio widget: clique com o botão direito em um atalho para renomear, mudar de lugar ou remover.")));
+                Ui.Caption("Em \"Editar\" (ou com o botão direito no atalho, no próprio widget) dá para trocar o nome, colocar uma imagem sua e escolher a cor do fundo.")));
     }
 
     /// <summary>Miniatura leve da imagem (não trava o arquivo).</summary>

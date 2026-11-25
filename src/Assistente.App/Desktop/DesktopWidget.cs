@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -13,6 +12,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using Rectangle = System.Windows.Shapes.Rectangle;
 using System.Windows.Threading;
 using Assistente.App.Services;
 using Assistente.App.Tools;
@@ -211,48 +211,8 @@ public static class DesktopWidget
 
     // ---------- Ícones de sites ----------
 
-    private static readonly string FaviconFolder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Assistente", "Icones");
-
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
-    private static readonly Dictionary<string, Task<ImageSource?>> Favicons = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Ícone grande do site (baixado uma vez e guardado no computador).</summary>
-    internal static Task<ImageSource?> FaviconAsync(string url)
-    {
-        string host;
-        try { host = new Uri(url).Host; }
-        catch (Exception) { return Task.FromResult<ImageSource?>(null); }
-        if (host.Length == 0) return Task.FromResult<ImageSource?>(null);
-        if (Favicons.TryGetValue(host, out var task)) return task;
-        return Favicons[host] = LoadFavicon(host);
-    }
-
-    private static async Task<ImageSource?> LoadFavicon(string host)
-    {
-        var file = Path.Combine(FaviconFolder, string.Concat(host.Split(Path.GetInvalidFileNameChars())) + ".png");
-        try
-        {
-            if (!File.Exists(file))
-            {
-                var bytes = await Http.GetByteArrayAsync($"https://www.google.com/s2/favicons?domain={Uri.EscapeDataString(host)}&sz=256");
-                Directory.CreateDirectory(FaviconFolder);
-                await File.WriteAllBytesAsync(file, bytes);
-            }
-            var bmp = new BitmapImage();
-            bmp.BeginInit();
-            bmp.UriSource = new Uri(file);
-            bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.EndInit();
-            bmp.Freeze();
-            // O Google devolve um globo de 16 px quando não acha nada: melhor a letra.
-            return bmp.PixelWidth < 32 ? null : bmp;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
+    /// <summary>Ícone grande do site (procurado na página uma vez e guardado no computador).</summary>
+    internal static async Task<ImageSource?> FaviconAsync(string url) => await IconLoader.SiteIconAsync(url);
 }
 
 /// <summary>A janela do widget em uma tela.</summary>
@@ -268,8 +228,10 @@ internal sealed class DesktopWidgetWindow : Window
     private Grid? _glassLayer;
     private bool _closing;
 
-    private bool GlassPanel => _settings.DesktopWidgetBackground != "solido";
+    private bool GlassPanel => _settings.DesktopWidgetBackground == "vidro";
     private bool GlassTiles => _settings.DesktopWidgetTiles != "solido";
+    private bool NoPanel => _settings.DesktopWidgetBackground == "nenhum";
+    private bool NoTiles => _settings.DesktopWidgetTiles == "nenhum";
 
     public DesktopWidgetWindow(AppSettings settings, System.Windows.Forms.Screen screen)
     {
@@ -289,6 +251,9 @@ internal sealed class DesktopWidgetWindow : Window
         FontFamily = new FontFamily("Segoe UI");
         Foreground = Brushes.White;
         AllowDrop = true;
+        // Tudo alinhado ao pixel da tela: ícones e textos nítidos (sem meio-pixel borrado).
+        UseLayoutRounding = true;
+        SnapsToDevicePixels = true;
 
         // Começa já dentro da tela certa; a posição exata (em pixels) vem depois de medir.
         var dpi = MainWindow.Current is { } main ? VisualTreeHelper.GetDpi(main) : new DpiScale(1, 1);
@@ -395,9 +360,9 @@ internal sealed class DesktopWidgetWindow : Window
     {
         _root.Children.Clear();
         var items = _settings.DesktopShortcuts ?? new List<DesktopShortcut>();
-        var tile = Math.Clamp(_settings.DesktopWidgetTileSize, 64, 160);
+        var tile = Math.Round(Math.Clamp(_settings.DesktopWidgetTileSize, 64, 160));
         var columns = Math.Clamp(_settings.DesktopWidgetColumns, 3, 10);
-        var cellW = tile + Math.Max(28, tile * 0.38);
+        var cellW = Math.Round(tile + Math.Max(28, tile * 0.38));
 
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
 
@@ -423,9 +388,9 @@ internal sealed class DesktopWidgetWindow : Window
             // Clique na hora ou na data abre o calendário.
             CalendarPopup.Attach(_time);
             CalendarPopup.Attach(_date);
-            stack.Children.Add(_time);
-            stack.Children.Add(_date);
             UpdateClock();
+            stack.Children.Add(NoPanel ? Shadowed(_time) : _time);
+            stack.Children.Add(NoPanel ? Shadowed(_date) : _date);
         }
         else
         {
@@ -443,14 +408,15 @@ internal sealed class DesktopWidgetWindow : Window
 
         if (items.Count == 0)
         {
-            stack.Children.Add(new TextBlock
+            var hint = new TextBlock
             {
                 Text = "Arraste apps, pastas ou links para cá, ou clique no +",
                 FontSize = 14,
                 Opacity = 0.8,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 6, 0, 0),
-            });
+            };
+            stack.Children.Add(NoPanel ? Shadowed(hint) : hint);
         }
 
         var panel = new Border
@@ -462,6 +428,16 @@ internal sealed class DesktopWidgetWindow : Window
         };
 
         var frame = new Grid { Margin = new Thickness(30) }; // espaço para a sombra
+        if (NoPanel)
+        {
+            // Sem fundo: só relógio e atalhos, direto no papel de parede. Um fundo quase invisível
+            // continua recebendo os arquivos e links arrastados entre os atalhos.
+            _glassLayer = null;
+            panel.Background = Frozen(new SolidColorBrush(Color.FromArgb(0x01, 0, 0, 0)));
+            frame.Children.Add(panel);
+            _root.Children.Add(frame);
+            return;
+        }
         // Sombra numa camada própria, atrás: efeito no painel inteiro deixava os textos foscos.
         frame.Children.Add(new Border
         {
@@ -664,37 +640,47 @@ internal sealed class DesktopWidgetWindow : Window
 
     // ---------- Atalhos ----------
 
+    /// <summary>Cor escolhida para o atalho (null = automática).</summary>
+    internal static Color? ParseColor(string? hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex) || hex == "nenhum") return null;
+        try
+        {
+            return ColorConverter.ConvertFromString(hex) is Color c ? Color.FromRgb(c.R, c.G, c.B) : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private FrameworkElement Shortcut(DesktopShortcut item, int index, double size, double cellW)
     {
-        var face = TileFace(size);
-        var icon = new Grid { Width = size * 0.62, Height = size * 0.62 };
-        SetFaceContent(face, icon, size);
-        FillIcon(face, icon, item, size);
+        var custom = ParseColor(item.Color);
+        // Quadrado: some com "Só o ícone" (geral) ou "Sem fundo" (do atalho); uma cor escolhida sempre mostra.
+        var card = item.Color != "nenhum" && (custom is not null || !NoTiles);
+
+        var face = card ? TileFace(size) : new Border { Width = size, Height = size };
+        var inner = Math.Round(size * (card ? 0.62 : 0.86));
+        var icon = new Grid { Width = inner, Height = inner };
+        SetFaceContent(face, icon, size, card);
+        if (card && custom is { } cc) Tint(face, cc, exact: true);
+        FillIcon(face, icon, item, size, card, autoTint: card && custom is null);
 
         var label = TileLabel(item.Name, size, cellW);
-        var cell = Cell(face, label, cellW, size);
+        var cell = Cell(face, label, cellW, size, card);
         cell.ToolTip = item.Kind == "site" ? item.Target : item.Name;
         cell.MouseLeftButtonUp += (_, _) => DesktopWidget.Launch(item);
 
         var menu = new ContextMenu();
         menu.Items.Add(MenuItem("Abrir", () => DesktopWidget.Launch(item)));
-        menu.Items.Add(MenuItem("Renomear…", () =>
+        menu.Items.Add(MenuItem("Editar atalho (nome, imagem e cor)…", () => ShortcutEditor.Edit(_settings, item)));
+        if (item.Kind == "site" && string.IsNullOrEmpty(item.Image))
         {
-            if (InputDialog.Ask("Renomear atalho", ("Nome", item.Name)) is { } r && r[0].Trim().Length > 0)
+            menu.Items.Add(MenuItem("Buscar o ícone do site de novo", () =>
             {
-                item.Name = r[0].Trim();
-                Save();
-            }
-        }));
-        if (item.Kind == "site")
-        {
-            menu.Items.Add(MenuItem("Trocar endereço…", () =>
-            {
-                if (InputDialog.Ask("Endereço do site", ("Endereço", item.Target)) is { } r && r[0].Trim().Length > 0)
-                {
-                    item.Target = DesktopWidget.NormalizeUrl(r[0]);
-                    Save();
-                }
+                IconLoader.ForgetSite(item.Target);
+                DesktopWidget.Refresh();
             }));
         }
         menu.Items.Add(new Separator());
@@ -709,6 +695,7 @@ internal sealed class DesktopWidgetWindow : Window
         menu.Items.Add(MenuItem("Remover da tela", () =>
         {
             list.Remove(item);
+            IconLoader.DeleteImported(item.Image);
             Save();
         }));
         menu.Items.Add(new Separator());
@@ -739,19 +726,52 @@ internal sealed class DesktopWidgetWindow : Window
         return item;
     }
 
-    /// <summary>Nome embaixo do ícone: branco, seminegrito e com sombra firme (lê em qualquer fundo).</summary>
-    private static TextBlock TileLabel(string text, double size, double cellW) => new()
+    /// <summary>Nome embaixo do ícone: branco e seminegrito. Sem o fundo do widget, ganha uma sombra (camada própria, texto nítido).</summary>
+    private FrameworkElement TileLabel(string text, double size, double cellW)
     {
-        Text = text,
-        FontSize = Math.Max(13, size * 0.145),
-        FontWeight = FontWeights.SemiBold,
-        Foreground = Brushes.White,
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        TextAlignment = TextAlignment.Center,
-        MaxWidth = cellW - 6,
-        Margin = new Thickness(0, 9, 0, 0),
-        HorizontalAlignment = HorizontalAlignment.Center,
-    };
+        var label = new TextBlock
+        {
+            Text = text,
+            FontSize = Math.Max(13, Math.Round(size * 0.145)),
+            FontWeight = FontWeights.SemiBold,
+            Foreground = Brushes.White,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextAlignment = TextAlignment.Center,
+            MaxWidth = cellW - 6,
+            Margin = new Thickness(0, 9, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        return NoPanel ? Shadowed(label) : label;
+    }
+
+    /// <summary>
+    /// Sombra para texto sobre o papel de parede: uma cópia escura e desfocada atrás do texto.
+    /// (Efeito no próprio texto o deixaria fosco.)
+    /// </summary>
+    private static FrameworkElement Shadowed(TextBlock text)
+    {
+        var shadow = new TextBlock
+        {
+            FontSize = text.FontSize,
+            FontFamily = text.FontFamily,
+            FontWeight = text.FontWeight,
+            TextTrimming = text.TextTrimming,
+            TextAlignment = text.TextAlignment,
+            MaxWidth = text.MaxWidth,
+            Margin = text.Margin,
+            HorizontalAlignment = text.HorizontalAlignment,
+            Foreground = Brushes.Black,
+            Opacity = 0.75,
+            IsHitTestVisible = false,
+            RenderTransform = new TranslateTransform(0, 1.5),
+            Effect = new BlurEffect { Radius = Math.Max(5, text.FontSize * 0.22) },
+        };
+        shadow.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding(nameof(TextBlock.Text)) { Source = text });
+        var grid = new Grid { HorizontalAlignment = text.HorizontalAlignment };
+        grid.Children.Add(shadow);
+        grid.Children.Add(text);
+        return grid;
+    }
 
     /// <summary>
     /// Quadrado do atalho. Começa neutro (vidro claro ou grafite) e ganha a cor do ícone em
@@ -759,13 +779,13 @@ internal sealed class DesktopWidgetWindow : Window
     /// </summary>
     private Border TileFace(double size)
     {
-        var radius = size * 0.27;
+        var radius = Math.Round(size * 0.27);
         var face = new Border
         {
             Width = size,
             Height = size,
             CornerRadius = new CornerRadius(radius),
-            BorderThickness = new Thickness(1.2),
+            BorderThickness = new Thickness(1),
             BorderBrush = new LinearGradientBrush(new GradientStopCollection
             {
                 new GradientStop(Color.FromArgb(0x90, 0xFF, 0xFF, 0xFF), 0),
@@ -777,10 +797,11 @@ internal sealed class DesktopWidgetWindow : Window
         return face;
     }
 
-    /// <summary>Pinta o quadrado com a cor do ícone (null = neutro).</summary>
-    private void Tint(Border face, Color? color)
+    /// <summary>Pinta o quadrado com a cor do ícone (null = neutro). <paramref name="exact"/>: cor escolhida pela pessoa, sem "avivar".</summary>
+    private void Tint(Border face, Color? color, bool exact = false)
     {
-        var a = (byte)(GlassTiles ? 0xC0 : 0xFF);
+        // Vidro um pouco translúcido, mas firme o bastante para a cor não ficar lavada.
+        var a = (byte)(GlassTiles ? 0xE0 : 0xFF);
         if (color is not { } c)
         {
             face.Background = GlassTiles
@@ -790,40 +811,93 @@ internal sealed class DesktopWidgetWindow : Window
             return;
         }
         var (h, sat, l) = ToHsl(c);
-        var top = FromHsl(h, Math.Min(1, sat + 0.05), Math.Min(0.72, l + 0.14));
-        var bottom = FromHsl((h + 12) % 360, Math.Min(1, sat + 0.1), Math.Max(0.2, l - 0.14));
+        Color top, bottom;
+        if (exact)
+        {
+            top = FromHsl(h, sat, Math.Min(1, l + 0.06));
+            bottom = FromHsl(h, sat, Math.Max(0, l - 0.06));
+        }
+        else
+        {
+            top = FromHsl(h, Math.Min(1, sat + 0.05), Math.Min(0.72, l + 0.14));
+            bottom = FromHsl((h + 12) % 360, Math.Min(1, sat + 0.1), Math.Max(0.2, l - 0.14));
+        }
         face.Background = new LinearGradientBrush(
             Color.FromArgb(a, top.R, top.G, top.B), Color.FromArgb(a, bottom.R, bottom.G, bottom.B), new Point(0.2, 0), new Point(0.8, 1));
         face.Tag = c;
     }
 
-    /// <summary>Conteúdo do quadrado: brilho de vidro no alto (atrás) e o ícone com sombra (na frente).</summary>
-    private static void SetFaceContent(Border face, FrameworkElement content, double size)
+    /// <summary>
+    /// Conteúdo do quadrado: brilho de vidro no alto, a sombra do ícone (silhueta desfocada,
+    /// numa camada própria) e o ícone por cima, sem efeito nenhum, para ficar nítido.
+    /// </summary>
+    private static void SetFaceContent(Border face, FrameworkElement content, double size, bool card = true)
     {
-        var radius = size * 0.27;
+        var radius = Math.Round(size * 0.27);
         var layers = new Grid();
-        layers.Children.Add(new Border
+        if (card)
         {
-            CornerRadius = new CornerRadius(radius, radius, 0, 0),
-            VerticalAlignment = VerticalAlignment.Top,
-            Height = size * 0.5,
-            IsHitTestVisible = false,
-            Background = new LinearGradientBrush(Color.FromArgb(0x4C, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 90),
-        });
+            layers.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(radius, radius, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+                Height = Math.Round(size * 0.5),
+                IsHitTestVisible = false,
+                Background = new LinearGradientBrush(Color.FromArgb(0x4C, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 90),
+            });
+        }
         content.HorizontalAlignment = HorizontalAlignment.Center;
         content.VerticalAlignment = VerticalAlignment.Center;
-        content.Effect ??= new DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.35, Direction = 270 };
+        // Sem o quadrado, a sombra é o que separa o ícone do papel de parede.
+        layers.Children.Add(Silhouette(content, card ? 0.35 : 0.6, card ? 8 : 12, card ? 2 : 3));
         layers.Children.Add(content);
         face.Child = layers;
     }
 
-    private FrameworkElement Cell(Border face, TextBlock label, double cellW, double size)
+    /// <summary>Sombra de um elemento: a forma dele em preto, desfocada e um pouco abaixo (não toca no elemento).</summary>
+    private static Rectangle Silhouette(FrameworkElement source, double opacity, double blur, double depth) => new()
+    {
+        Width = source.Width,
+        Height = source.Height,
+        HorizontalAlignment = source.HorizontalAlignment,
+        VerticalAlignment = source.VerticalAlignment,
+        Fill = Brushes.Black,
+        OpacityMask = Exact(source, source.Width, source.Height),
+        Opacity = opacity,
+        IsHitTestVisible = false,
+        RenderTransform = new TranslateTransform(0, depth),
+        Effect = new BlurEffect { Radius = blur, KernelType = KernelType.Gaussian },
+    };
+
+    /// <summary>Cópia ao vivo do elemento, no mesmo tamanho e posição (sombras/brilhos que vazam não a deslocam).</summary>
+    private static VisualBrush Exact(Visual source, double w, double h) => new(source)
+    {
+        Viewbox = new Rect(0, 0, w, h),
+        ViewboxUnits = BrushMappingMode.Absolute,
+        Stretch = Stretch.Fill,
+    };
+
+    private FrameworkElement Cell(Border face, FrameworkElement label, double cellW, double size, bool card = true)
     {
         var holder = new Grid { Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
+        // Sombra que vira um brilho da cor do ícone ao passar o mouse. Fica numa camada própria
+        // atrás do quadrado: efeito no quadrado deixava o ícone fosco.
+        var glowBrush = new SolidColorBrush(Colors.Black);
+        var shift = new TranslateTransform(0, 5);
+        var blur = new BlurEffect { Radius = 18, KernelType = KernelType.Gaussian };
+        var glow = new Rectangle
+        {
+            Width = size,
+            Height = size,
+            Fill = glowBrush,
+            OpacityMask = Exact(face, size, size),
+            Opacity = card ? 0.4 : 0,
+            IsHitTestVisible = false,
+            RenderTransform = shift,
+            Effect = blur,
+        };
+        holder.Children.Add(glow);
         holder.Children.Add(face);
-        // Sombra que vira um brilho da cor do ícone ao passar o mouse.
-        var glow = new DropShadowEffect { BlurRadius = 18, ShadowDepth = 5, Opacity = 0.4, Direction = 270, Color = Colors.Black };
-        holder.Effect = glow;
 
         var scale = new ScaleTransform(1, 1);
         holder.RenderTransformOrigin = new Point(0.5, 0.5);
@@ -840,10 +914,10 @@ internal sealed class DesktopWidgetWindow : Window
         }
         void Glow(bool on)
         {
-            glow.Color = on && face.Tag is Color c ? c : Colors.Black;
-            glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, Anim.To(on ? 34 : 18, 220));
-            glow.BeginAnimation(DropShadowEffect.OpacityProperty, Anim.To(on ? 0.85 : 0.4, 220));
-            glow.BeginAnimation(DropShadowEffect.ShadowDepthProperty, Anim.To(on ? 2 : 5, 220));
+            glowBrush.Color = on && face.Tag is Color c ? c : Colors.Black;
+            blur.BeginAnimation(BlurEffect.RadiusProperty, Anim.To(on ? 34 : 18, 220));
+            glow.BeginAnimation(OpacityProperty, Anim.To(on ? (card ? 0.85 : 0.5) : (card ? 0.4 : 0), 220));
+            shift.BeginAnimation(TranslateTransform.YProperty, Anim.To(on ? 2 : 5, 220));
         }
         stack.MouseEnter += (_, _) => { To(1.1, 180); Glow(true); };
         stack.MouseLeave += (_, _) => { To(1, 200); Glow(false); };
@@ -852,45 +926,73 @@ internal sealed class DesktopWidgetWindow : Window
         return stack;
     }
 
-    private void FillIcon(Border face, Grid host, DesktopShortcut item, double size)
+    private static Image Picture(ImageSource source, double radius = 0)
     {
+        var image = new Image { Source = source, Stretch = Stretch.Uniform, SnapsToDevicePixels = true };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+        if (radius > 0)
+        {
+            image.Loaded += (_, _) =>
+            {
+                if (image.ActualWidth > 0)
+                    image.Clip = new RectangleGeometry(new Rect(0, 0, image.ActualWidth, image.ActualHeight), radius, radius);
+            };
+        }
+        return image;
+    }
+
+    private void FillIcon(Border face, Grid host, DesktopShortcut item, double size, bool card, bool autoTint)
+    {
+        // Imagem escolhida pela pessoa vence o ícone normal.
+        if (IconLoader.LoadFile(item.Image) is { } mine)
+        {
+            host.Children.Add(Picture(mine, card ? Math.Round(size * 0.14) : Math.Round(size * 0.22)));
+            if (autoTint) Tint(face, IconColor(mine));
+            return;
+        }
         switch (item.Kind)
         {
             case "pasta":
-                host.Children.Add(Glyph("\uE8B7", size * 0.48, Colors.White));
-                Tint(face, Color.FromRgb(0x2E, 0x8B, 0xFF));
+                host.Children.Add(Glyph("", Math.Round(size * (card ? 0.48 : 0.7)), Colors.White));
+                if (autoTint) Tint(face, Color.FromRgb(0x2E, 0x8B, 0xFF));
                 break;
             case "site":
                 var name = DesktopWidget.SiteName(item.Target);
-                var letter = Monogram(name, size);
+                var letter = Monogram(name, card ? size : size * 1.4);
                 host.Children.Add(letter);
-                Tint(face, FromHsl(NameHue(name), 0.7, 0.5));
-                _ = LoadSiteIcon(face, host, letter, item.Target, size);
+                if (autoTint) Tint(face, FromHsl(NameHue(name), 0.7, 0.5));
+                _ = LoadSiteIcon(face, host, letter, item.Target, size, card, autoTint);
                 break;
             default:
-                var image = Docking.Native.GetIcon(item.Target, 256);
-                if (image is null) host.Children.Add(Glyph("\uE7AC", size * 0.45, Colors.White));
-                else host.Children.Add(new Image { Source = image, Stretch = Stretch.Uniform });
-                RenderOptions.SetBitmapScalingMode(host, BitmapScalingMode.HighQuality);
-                Tint(face, image is null ? null : IconColor(image));
+                ImageSource? image = IconLoader.AppIcon(item.Target) ?? Docking.Native.GetIcon(item.Target, 256);
+                if (image is null) host.Children.Add(Glyph("", Math.Round(size * (card ? 0.45 : 0.65)), Colors.White));
+                else host.Children.Add(Picture(image));
+                if (autoTint) Tint(face, image is null ? null : IconColor(image));
                 break;
         }
     }
 
-    private async Task LoadSiteIcon(Border face, Grid host, UIElement placeholder, string url, double size)
+    private async Task LoadSiteIcon(Border face, Grid host, UIElement placeholder, string url, double size, bool card, bool autoTint)
     {
         if (await DesktopWidget.FaviconAsync(url) is not { } img) return;
         host.Children.Remove(placeholder);
-        // Favicon num "selo" branco arredondado: fica nítido sobre o quadrado colorido.
-        var image = new Image { Source = img, Stretch = Stretch.Uniform, Margin = new Thickness(size * 0.07) };
-        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
-        host.Children.Add(new Border
+        if (card)
         {
-            CornerRadius = new CornerRadius(size * 0.18),
-            Background = Brushes.White,
-            Child = image,
-        });
-        if (IconColor(img) is { } c) Tint(face, c);
+            // Favicon num "selo" branco arredondado: fica nítido sobre o quadrado colorido.
+            host.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(Math.Round(size * 0.18)),
+                Background = Brushes.White,
+                Child = Picture(img),
+                Padding = new Thickness(Math.Round(size * 0.07)),
+            });
+        }
+        else
+        {
+            // Só o ícone: o próprio ícone do site, com cantos arredondados.
+            host.Children.Add(Picture(img, Math.Round(size * 0.22)));
+        }
+        if (autoTint && IconColor(img) is { } c) Tint(face, c);
     }
 
     /// <summary>
@@ -995,10 +1097,11 @@ internal sealed class DesktopWidgetWindow : Window
     private FrameworkElement AddTile(double size, double cellW, bool empty)
     {
         var face = TileFace(size);
-        var plus = Glyph("\uE710", size * 0.32, Colors.White);
-        plus.Effect = new DropShadowEffect { BlurRadius = 8, ShadowDepth = 1, Opacity = 0.5, Direction = 270 };
+        var plus = new Grid { Width = Math.Round(size * 0.5), Height = Math.Round(size * 0.5) };
+        plus.Children.Add(Glyph("\uE710", Math.Round(size * 0.32), Colors.White));
         SetFaceContent(face, plus, size);
-        face.Opacity = empty ? 1 : 0.8;
+        // Com "só o ícone", o + fica discreto para não parecer um atalho.
+        face.Opacity = empty ? 1 : NoTiles ? 0.55 : 0.8;
         var label = TileLabel("Adicionar", size, cellW);
         label.Opacity = 0.9;
         var cell = Cell(face, label, cellW, size);
