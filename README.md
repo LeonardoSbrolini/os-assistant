@@ -21,7 +21,9 @@ Deixa o Windows com cara de Mac: uma **Dynamic Island** no topo da tela, **dock*
 
 | Quero… | Faça isto |
 |---|---|
-| Abrir as ferramentas (Sistema, Chat IA, Música…) | Passe o mouse na ilha do topo e clique no ícone do assistente, ou dois cliques no ícone da bandeja |
+| Abrir as ferramentas (Sistema, Chat IA, Música…) | Clique em **Ferramentas** na ilha do topo, ou dois cliques no ícone da bandeja |
+| Copiar de novo algo do Ctrl+C | Ilha do topo › aba **Copiados** › clique no item |
+| Trocar o avatar (ou usar sua foto) | Clique no avatar na aba Início da ilha, ou Configurações › Avatar |
 | Ver o calendário | Clique em qualquer data ou hora (barra do topo, ilha, menu do canto, tela personalizada) |
 | Mudar como a ilha abre (menu pequeno ou grande) | Configurações › Ilha e menus |
 | Ver Wi‑Fi, volume, bateria e notificações | Leve o mouse ao canto de baixo à direita da tela |
@@ -29,7 +31,7 @@ Deixa o Windows com cara de Mac: uma **Dynamic Island** no topo da tela, **dock*
 | Colocar atalhos no meio da área de trabalho | Configurações › Tela personalizada e arraste apps, pastas ou sites para o widget |
 | Trocar o papel de parede (e manter mesmo com política da empresa) | Configurações › Papel de parede |
 
-A barra de menus do topo só aparece com a **área de trabalho** na frente; com um app aberto ela some sozinha. Tudo funciona na **tela principal** quando há dois monitores.
+A barra de menus do topo só aparece com a **área de trabalho** na frente; com um app aberto ela some sozinha. Com dois monitores, escolha em Configurações se a ilha e o dock ficam só na tela principal, em todas ou em uma tela específica; cada tela some e volta sozinha, sem ser afetada pelo que você faz na outra.
 
 ## Por que C# + .NET 8 + WPF
 
@@ -51,7 +53,7 @@ A barra de menus do topo só aparece com a **área de trabalho** na frente; com 
 | Calculadoras | Regra de três | Direta e inversa |
 | Calculadoras | Porcentagem | X% de Y, quantos % é, variação, aumento/desconto |
 | Geradores | CPF, CNPJ e RG | Gera em lote (com ou sem pontuação, CPF por estado) e valida, inclusive o CNPJ alfanumérico |
-| Utilitários | Histórico de cópias | Guarda tudo que é copiado (Ctrl+C) enquanto o app está aberto, com busca; clique duplo copia de novo. Só em memória, ignora cópias marcadas por gerenciadores de senha |
+| Utilitários | Histórico de cópias | Guarda tudo que é copiado (Ctrl+C) enquanto o app está aberto, com busca; um clique copia de novo (com animação), lista compacta com rolagem. Só em memória, ignora cópias marcadas por gerenciadores de senha |
 | Tempo | Timer | Contagem regressiva com atalhos (1 a 60 min); ao terminar o alarme toca até ser silenciado (máx. 1 min) e mostra notificação |
 | Tempo | Cronômetro | Iniciar/pausar, voltas, copiar voltas |
 | Utilitários | Gerador de senhas | Gerador criptográfico, escolha de caracteres |
@@ -65,11 +67,11 @@ As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferr
 
 **Dock estilo Mac** (Configurações › Dock, ou pelo ícone da bandeja): barra embaixo e centralizada com programas fixados e abertos, zoom nos ícones, bolinha nos abertos, clique para abrir/alternar/minimizar, botão direito para fixar, abrir nova janela ou fechar. Como no Mac, some quando uma janela encosta nele e volta ao levar o mouse até a borda de baixo; o canto direito tem Wi‑Fi, volume, bateria e relógio. O avatar do topo também sai de cena quando há uma janela embaixo dele (menos com widget de música/timer) e volta ao levar o mouse ao topo. O painel abre e fecha com um efeito "gênio" saindo do avatar.
 
-**Ilha no topo (estilo Dynamic Island / notch)** (Configurações › Geral): uma pílula preta grudada no topo da tela, com as bordas curvas se encontrando com a borda, mostrando avatar, timer, música, CPU, bateria e hora. Ao passar o mouse ela cresce e vira um painel com abas — **Início** (música, semana do calendário e avatar que abre o assistente), **Bandeja** (arraste arquivos até a ilha para deixá-los à mão; clique abre, arrastar para fora copia, botão direito tira) e **Sistema** (CPU, memória, rede, bateria) — e botões de abrir o assistente e configurações.
+**Ilha no topo (estilo Dynamic Island / notch)** (Configurações › Geral): uma pílula preta grudada no topo da tela, com as bordas curvas se encontrando com a borda, mostrando avatar, timer, música, CPU, bateria e hora. Ao passar o mouse ela cresce e vira um painel com abas — **Início** (música, calendário da semana com a hora e o avatar, que abre a escolha de avatar), **Copiados** (histórico do Ctrl+C: clique copia de novo), **Sistema** (CPU, memória, rede, bateria) e **Tempo** — e os botões **Ferramentas** e configurações. Cada item da ilha abre o menu dele: timer → Tempo, CPU/bateria → Sistema, hora → calendário.
 
 **Menus nas bordas da área de trabalho** (Configurações › Geral): com a área de trabalho à vista, encostar o mouse na borda esquerda abre seus apps e pastas (adicione com "Adicionar app/pasta", remova com o botão direito); a aba **Acesso remoto** guarda conexões (Área de Trabalho Remota do Windows, TightVNC ou outro app, com usuário e senha protegida por DPAPI) e conecta com um clique; no **canto de baixo à direita** abre a central do Windows: relógio e data, Wi‑Fi, Bluetooth, notificações, bateria, volume, apps em segundo plano e atalhos (impressoras, painel de controle, gerenciador de tarefas, lixeira…). Essas funções saíram do dock.
 
-**Menu em círculo** (Configurações › Geral): segure (arrastando) um arquivo ou app no Explorer ou na área de trabalho e clique com o botão direito: aparece um círculo em volta do cursor. Solte o arquivo numa fatia para **zipar**, **extrair** (.zip), **converter para PNG/JPG**, **reduzir 50%**, **copiar o caminho** ou **guardar na bandeja da ilha**. Soltar no centro cancela.
+**Menu em círculo** (Configurações › Geral): segure (arrastando) um arquivo ou app no Explorer ou na área de trabalho e clique com o botão direito: aparece um círculo em volta do cursor. Solte o arquivo numa fatia para **zipar**, **extrair** (.zip), **converter para PNG/JPG**, **reduzir 50%**, **remover fundo** ou **copiar o caminho**. Soltar no centro cancela.
 
 **Apps em segundo plano**: a setinha "^" do dock abre um painel próprio com os apps rodando sem janela (Discord, Steam, OneDrive…). Clique abre o app; ao passar o mouse aparecem os botões de abrir a pasta e fechar o app (clique duas vezes para confirmar).
 
@@ -83,7 +85,7 @@ As ferramentas ficam agrupadas na barra lateral (Sistema, Chat IA, Música, Ferr
 
 **Papel de parede** (Configurações › Papel de parede): uma imagem para todas as telas ou uma para cada tela, ajuste (preencher, ajustar, estender…) e degradês estilo Mac. Com **Manter** ligado, se a empresa (política de grupo do AD) ou outro programa trocar o fundo, o Assistente coloca o seu de volta: ao abrir, ao desbloquear, quando o Windows avisa da troca e a cada 30 s.
 
-**Configurações** (botão ⚙ ou ícone da bandeja) abrem em **tela cheia** na tela onde está o mouse (ou em janela, escolha em Geral); a bolinha verde, F11 ou dois cliques no topo alternam na hora. Nelas: iniciar com o Windows, temas, cor de destaque, transparência do painel e das janelas, tamanho, animações, **10 avatares originais** para a alça, posição, serviço de IA e atualizações.
+**Configurações** (botão ⚙ ou ícone da bandeja) abrem em **tela cheia** na tela onde está o mouse (ou em janela, escolha em Geral); a bolinha verde, F11 ou dois cliques no topo alternam na hora. Nelas: iniciar com o Windows, temas, cor de destaque, transparência do painel e das janelas, tamanho, animações, **20 avatares originais** (10 animados) ou **sua foto** para a alça, posição, serviço de IA e atualizações.
 
 Também: ícone na bandeja (abrir, borda topo/direita/esquerda, posição na borda, iniciar com o Windows, sair), botão de fixar o painel aberto, e a última ferramenta usada é lembrada.
 

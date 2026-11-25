@@ -410,6 +410,116 @@ internal static class Native
         return new Rect(r.Left, r.Top, Math.Max(0, r.Right - r.Left), Math.Max(0, r.Bottom - r.Top));
     }
 
+    // ---------- Por tela (cada monitor decide sozinho) ----------
+
+    /// <summary>Monitor (HMONITOR) em que está a maior parte de um retângulo em pixels.</summary>
+    public static IntPtr MonitorOf(Rect pixels)
+    {
+        var r = new NativeRect { Left = (int)pixels.Left, Top = (int)pixels.Top, Right = (int)pixels.Right, Bottom = (int)pixels.Bottom };
+        return MonitorFromRect(ref r, MonitorDefaultToNearest);
+    }
+
+    /// <summary>Monitor da janela (o mais próximo).</summary>
+    public static IntPtr MonitorOfWindow(IntPtr hwnd) => MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+
+    /// <summary>Monitor em que está o mouse.</summary>
+    public static IntPtr MonitorOfCursor()
+    {
+        GetCursorPos(out var p);
+        return MonitorFromPoint(p, MonitorDefaultToNearest);
+    }
+
+    private static readonly Dictionary<IntPtr, List<(IntPtr Hwnd, Rect Rect)>> FrontCache = new();
+    private static DateTime _frontAt = DateTime.MinValue;
+
+    /// <summary>
+    /// A janela de app mais à frente (na ordem de cima para baixo) em cada tela. É o que decide se
+    /// a ilha/dock daquela tela somem: clicar em outra tela não muda o que está na frente nesta.
+    /// </summary>
+    public static (IntPtr Hwnd, Rect Rect)? FrontWindowOn(IntPtr monitor)
+    {
+        var all = WindowsOn(monitor);
+        return all.Count > 0 ? all[0] : null;
+    }
+
+    /// <summary>
+    /// Alguma janela aberta (não minimizada) nesta tela encosta neste retângulo (pixels)? Só as
+    /// janelas desta tela contam: clicar ou usar a outra tela não faz a ilha/dock daqui aparecer.
+    /// </summary>
+    public static bool AnyWindowTouches(IntPtr monitor, Rect pixels)
+    {
+        foreach (var (_, r) in WindowsOn(monitor))
+            if (r.Right > pixels.Left && r.Left < pixels.Right && r.Bottom > pixels.Top && r.Top < pixels.Bottom) return true;
+        return false;
+    }
+
+    /// <summary>Janelas de app abertas nesta tela, da mais à frente para a mais atrás.</summary>
+    public static List<(IntPtr Hwnd, Rect Rect)> WindowsOn(IntPtr monitor)
+    {
+        // Ilha e dock de cada tela perguntam várias vezes por segundo: uma leitura serve a todos.
+        if (DateTime.Now - _frontAt > TimeSpan.FromMilliseconds(70))
+        {
+            FrontCache.Clear();
+            _frontAt = DateTime.Now;
+            var ownPid = (uint)Environment.ProcessId;
+            EnumWindows((hwnd, _) =>
+            {
+                try
+                {
+                    if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) return true;
+                    var ex = GetWindowLong(hwnd, GwlExStyle);
+                    if ((ex & WsExToolWindow) != 0 && (ex & WsExAppWindow) == 0) return true;
+                    if (GetWindow(hwnd, GwOwner) != IntPtr.Zero && (ex & WsExAppWindow) == 0) return true;
+                    // Camadas invisíveis por cima da tela (sobreposições de jogos/drivers) não contam.
+                    if ((ex & 0x20 /* WS_EX_TRANSPARENT */) != 0 || (ex & 0x08000000 /* WS_EX_NOACTIVATE */) != 0) return true;
+                    if (IsCloaked(hwnd)) return true;
+                    if (GetWindowTextLength(hwnd) == 0) return true;
+                    var cls = new StringBuilder(256);
+                    GetClassName(hwnd, cls, cls.Capacity);
+                    if (IgnoredClasses.Contains(cls.ToString())) return true;
+                    if (GetWindowProcessId(hwnd) == ownPid && !IsOwnAppWindow(hwnd)) return true;
+                    if (!GetWindowRect(hwnd, out var r) || r.Right - r.Left <= 0 || r.Bottom - r.Top <= 0) return true;
+                    var monitor = MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+                    if (!FrontCache.TryGetValue(monitor, out var list)) FrontCache[monitor] = list = new();
+                    list.Add((hwnd, new Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top)));
+                }
+                catch (Exception)
+                {
+                    // Janela fechou no meio da leitura.
+                }
+                return true;
+            }, IntPtr.Zero);
+        }
+        return FrontCache.TryGetValue(monitor, out var found) ? found : new();
+    }
+
+    /// <summary>A janela da frente nesta tela ocupa a tela inteira (jogo, vídeo em tela cheia)?</summary>
+    public static bool IsFullscreenOn(IntPtr monitor)
+    {
+        if (FrontWindowOn(monitor) is not { } front) return false;
+        var hwnd = front.Hwnd;
+        if (IsZoomed(hwnd) || (GetWindowLong(hwnd, GwlStyle) & WsCaption) == WsCaption) return false;
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info)) return false;
+        var m = info.Monitor;
+        var r = front.Rect;
+        return r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom;
+    }
+
+    /// <summary>
+    /// A área de trabalho está "na frente" nesta tela? Nenhuma janela aberta nela, ou o fundo da
+    /// área de trabalho foi clicado (Win+D, clique no fundo) com o mouse nesta tela.
+    /// </summary>
+    public static bool IsDesktopOn(IntPtr monitor)
+    {
+        if (FrontWindowOn(monitor) is null) return true;
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return false;
+        var cls = new StringBuilder(256);
+        GetClassName(hwnd, cls, cls.Capacity);
+        return cls.ToString() is "Progman" or "WorkerW" && MonitorOfCursor() == monitor;
+    }
+
     /// <summary>Aperta Windows + tecla (ex.: Win+A abre Wi‑Fi/volume, Win+N notificações e calendário).</summary>
     public static void WinCombo(byte key)
     {
@@ -577,6 +687,8 @@ internal static class Native
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromRect(ref NativeRect rect, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(NativePoint point, uint flags);
     [DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string cls, string? title);

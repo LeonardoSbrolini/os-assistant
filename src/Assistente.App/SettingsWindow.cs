@@ -496,7 +496,7 @@ public sealed class SettingsWindow : Window
 
     private FrameworkElement IslandPage()
     {
-        var island = ToggleRow("Ilha no topo", "Estilo Dynamic Island: assistente, relógio, CPU, bateria, música, timer e bandeja de arquivos.",
+        var island = ToggleRow("Ilha no topo", "Estilo Dynamic Island: assistente, relógio, CPU, bateria, música, timer e histórico de cópias (Ctrl+C).",
             _settings.MenuBarEnabled, v => { _settings.MenuBarEnabled = v; _settings.Save(); MenuBar.MenuBarWindow.Apply(_settings); }, last: true);
         var corners = ToggleRow("Menus de canto", "Borda esquerda com seus apps, pastas e acessos remotos (só na área de trabalho) e canto de baixo à direita com Wi‑Fi, volume e atalhos do Windows.",
             _settings.CornerMenus, v => { _settings.CornerMenus = v; _settings.Save(); Corners.CornerMenu.Apply(_settings); }, last: true);
@@ -526,7 +526,7 @@ public sealed class SettingsWindow : Window
             var panel = new StackPanel();
             foreach (var (key, title, caption) in new[]
             {
-                ("aberta", "Menu grande", "Abre por completo, com as abas Início, Bandeja, Sistema e Tempo."),
+                ("aberta", "Menu grande", "Abre por completo, com as abas Início, Copiados, Sistema e Tempo."),
                 ("peek", "Menu pequeno", "Mostra a hora e a música (ou a saudação); clique para abrir o grande."),
             })
             {
@@ -546,6 +546,13 @@ public sealed class SettingsWindow : Window
 
         return Page("Ilha e menus",
             Ui.Card("Topo da tela", "", island),
+            Ui.Card("Em quais telas", "\uE7F4", ScreenChoiceRows("islandScreens", () => _settings.IslandScreens, v =>
+                {
+                    _settings.IslandScreens = v;
+                    _settings.Save();
+                    MenuBar.MenuBarWindow.Apply(_settings);
+                }),
+                Ui.Caption("Em cada tela a ilha some e volta sozinha: usar a outra tela não faz ela aparecer nesta.")),
             Ui.Card("Ao passar o mouse na área de trabalho", "\uE8B0", hover),
             Ui.Card("Ao passar o mouse com um app aberto", "\uE737", hoverBusy,
                 Ui.Caption("Abre só o menu escolhido: o pequeno não vira o grande sozinho (clique nele para abrir o grande).")),
@@ -1274,16 +1281,51 @@ public sealed class SettingsWindow : Window
     private FrameworkElement AvatarPage()
     {
         var grid = new WrapPanel();
+        var animated = new WrapPanel();
+        var mine = new WrapPanel();
         void Build()
         {
             grid.Children.Clear();
+            animated.Children.Clear();
+            mine.Children.Clear();
             grid.Children.Add(AvatarOption(null, "Setinha", "Padrão", null));
-            foreach (var avatar in Avatars.All)
-                grid.Children.Add(AvatarOption(avatar.Id, avatar.Name, avatar.Inspiration, avatar.Image));
+            foreach (var avatar in Avatars.All.Where(a => !a.IsAnimated))
+                grid.Children.Add(AvatarOption(avatar.Id, avatar.Name, avatar.Inspiration, avatar));
+            foreach (var avatar in Avatars.Animated)
+                animated.Children.Add(AvatarOption(avatar.Id, avatar.Name, avatar.Inspiration, avatar));
+            if (Avatars.Photo is { } photo) mine.Children.Add(AvatarOption(Avatars.PhotoId, "Minha foto", "Sua foto", photo));
         }
 
-        FrameworkElement AvatarOption(string? id, string name, string hint, ImageSource? image)
+        void PickPhoto()
         {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Escolha uma foto para o avatar",
+                Filter = "Imagens|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|Todos os arquivos|*.*",
+            };
+            if (dialog.ShowDialog(this) != true) return;
+            try
+            {
+                _settings.AvatarPhoto = Avatars.SavePhoto(dialog.FileName);
+                Avatars.PhotoPath = _settings.AvatarPhoto;
+                if (Avatars.Photo is null)
+                {
+                    Ui.Confirm("Esse arquivo não é uma imagem que dê para usar. Escolha um PNG ou JPG.");
+                    return;
+                }
+                Change(() => _settings.Avatar = Avatars.PhotoId);
+                MenuBar.MenuBarWindow.RefreshAvatar();
+                Build();
+            }
+            catch (Exception ex)
+            {
+                Ui.Confirm("Não deu para usar essa foto: " + ex.Message);
+            }
+        }
+
+        FrameworkElement AvatarOption(string? id, string name, string hint, Avatar? avatar)
+        {
+            var image = avatar?.Image;
             var selected = (_settings.Avatar ?? "") == (id ?? "");
             var picture = image is null
                 ? (UIElement)new Border
@@ -1302,7 +1344,7 @@ public sealed class SettingsWindow : Window
                         VerticalAlignment = VerticalAlignment.Center,
                     },
                 }
-                : new Image { Source = image, Width = 64, Height = 64 };
+                : Avatars.View(avatar!, 64);
 
             var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             stack.Children.Add(picture);
@@ -1330,15 +1372,50 @@ public sealed class SettingsWindow : Window
             card.MouseLeftButtonUp += (_, _) =>
             {
                 Change(() => _settings.Avatar = id);
+                MenuBar.MenuBarWindow.RefreshAvatar();
                 Build();
             };
             return card;
         }
 
         Build();
+        var photoButton = Ui.Btn("Escolher foto…", PickPhoto, primary: true);
         return Page("Avatar",
-            Ui.Caption("Escolha o personagem que fica na borda da tela no lugar da setinha. Todos são desenhos originais, inspirados em estilos de desenhos, séries e jogos."),
-            grid);
+            Ui.Card("Minha foto", "\uE77B", mine, Ui.Inline(photoButton),
+                Ui.Caption("Use uma foto sua como avatar (na alça e na ilha). Ela fica recortada em círculo.")),
+            Ui.Card("Animados", "\uE945", animated,
+                Ui.Caption("Personagens que se mexem: acenam, piscam, flutuam…")),
+            Ui.Card("Personagens", "\uE77B", grid,
+                Ui.Caption("Todos são desenhos originais, inspirados em estilos de desenhos, séries e jogos.")));
+    }
+
+    /// <summary>Escolha de telas: só a principal, todas ou uma específica (com duas telas ou mais).</summary>
+    private FrameworkElement ScreenChoiceRows(string group, Func<string> get, Action<string> set)
+    {
+        var panel = new StackPanel();
+        var options = new List<(string Key, string Label)> { ("principal", "Só na tela principal") };
+        var list = ScreenChoice.All();
+        if (list.Count > 1)
+        {
+            options.Add(("todas", "Em todas as telas"));
+            options.AddRange(list.Select(sc => (sc.Device, "Só na " + sc.Label.Replace("Tela", "tela") + $" ({sc.Screen.Bounds.Width}×{sc.Screen.Bounds.Height})")));
+        }
+        else
+        {
+            panel.Children.Add(Ui.Caption("Só uma tela ligada agora. Com mais telas, dá para escolher todas ou uma delas."));
+        }
+        foreach (var (key, label) in options)
+        {
+            var radio = new RadioButton { GroupName = group, Content = label, FontSize = 14, IsChecked = get() == key, Margin = new Thickness(0, 4, 0, 4) };
+            var k = key;
+            radio.Checked += (_, _) =>
+            {
+                if (get() == k) return;
+                set(k);
+            };
+            panel.Children.Add(radio);
+        }
+        return panel;
     }
 
     private FrameworkElement PositionPage()
@@ -1563,6 +1640,13 @@ public sealed class SettingsWindow : Window
                            "Botão direito no botão Iniciar do dock › \"Mostrar a barra do Windows\" também traz ela de volta.")),
             Ui.Card("Quando esconder o dock", "\uE713", autoHide, running,
                 Ui.Caption("Escondido, ele volta quando você leva o mouse até a borda de baixo da tela.")),
+            Ui.Card("Em quais telas", "\uE7F4", ScreenChoiceRows("dockScreens", () => _settings.DockScreens, v =>
+                {
+                    _settings.DockScreens = v;
+                    _settings.Save();
+                    Docking.DockWindow.Apply(_settings);
+                }),
+                Ui.Caption("Em cada tela o dock some e volta sozinho: usar a outra tela não faz ele aparecer nesta.")),
             Ui.Card("Tamanho", "\uE740", size, zoom),
             Ui.Card("Programas fixados", "\uE718", list, Ui.Inline(add, reset),
                 Ui.Caption("Dica: no próprio dock, clique com o botão direito num programa aberto e escolha \"Manter no dock\".")));

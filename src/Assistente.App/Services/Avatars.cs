@@ -1,13 +1,26 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 
 namespace Assistente.App.Services;
 
-/// <summary>Um avatar para a alça do widget.</summary>
-public sealed record Avatar(string Id, string Name, string Inspiration, ImageSource Image);
+/// <summary>Um avatar para a alça do widget. Os animados têm vários quadros (<see cref="Frames"/>).</summary>
+public sealed record Avatar(string Id, string Name, string Inspiration, ImageSource Image)
+{
+    /// <summary>Quadros da animação (nulo = avatar parado).</summary>
+    public IReadOnlyList<ImageSource>? Frames { get; init; }
+
+    /// <summary>Duração de cada quadro, em milissegundos.</summary>
+    public double FrameMs { get; init; } = 90;
+
+    public bool IsAnimated => Frames is { Count: > 1 };
+}
 
 /// <summary>
 /// 10 avatares originais, desenhados em vetor (sem imagens externas), inspirados
@@ -19,8 +32,96 @@ public static class Avatars
 
     public static IReadOnlyList<Avatar> All => LazyAll.Value;
 
+    /// <summary>Só os animados (para a seção "Animados" das configurações).</summary>
+    public static IEnumerable<Avatar> Animated => All.Where(a => a.IsAnimated);
+
+    public const string PhotoId = "foto";
+
+    /// <summary>Arquivo da foto do usuário (cópia guardada na pasta do app).</summary>
+    public static string? PhotoPath { get; set; }
+
+    private static Avatar? _photo;
+    private static string? _photoKey;
+
+    /// <summary>"Minha foto": a foto escolhida, recortada em círculo.</summary>
+    public static Avatar? Photo
+    {
+        get
+        {
+            if (PhotoPath is null || !File.Exists(PhotoPath)) return null;
+            var key = PhotoPath + File.GetLastWriteTimeUtc(PhotoPath).Ticks;
+            if (key == _photoKey) return _photo;
+            _photoKey = key;
+            _photo = null;
+            try
+            {
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = BitmapCacheOption.OnLoad; // não prende o arquivo
+                bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                bmp.DecodePixelWidth = 256;
+                bmp.UriSource = new Uri(PhotoPath);
+                bmp.EndInit();
+                bmp.Freeze();
+                // Preenche o círculo sem distorcer (corta as sobras, como "preencher").
+                var ratio = bmp.PixelWidth / (double)Math.Max(1, bmp.PixelHeight);
+                var w = ratio >= 1 ? 100 * ratio : 100;
+                var h = ratio >= 1 ? 100 : 100 / ratio;
+                var group = new DrawingGroup { ClipGeometry = new EllipseGeometry(new Point(50, 50), 50, 50) };
+                group.Children.Add(new ImageDrawing(bmp, new Rect(50 - w / 2, 50 - h / 2, w, h)));
+                var image = new DrawingImage(group);
+                image.Freeze();
+                _photo = new Avatar(PhotoId, "Minha foto", "Sua foto", image);
+            }
+            catch (Exception)
+            {
+                // Arquivo que não é imagem: fica sem foto.
+            }
+            return _photo;
+        }
+    }
+
     public static Avatar? Find(string? id) =>
-        string.IsNullOrEmpty(id) ? null : All.FirstOrDefault(a => a.Id == id);
+        string.IsNullOrEmpty(id) ? null : id == PhotoId ? Photo : All.FirstOrDefault(a => a.Id == id);
+
+    /// <summary>Copia a foto escolhida para a pasta do app (assim continua funcionando se o original sumir).</summary>
+    public static string SavePhoto(string source)
+    {
+        var folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Assistente");
+        Directory.CreateDirectory(folder);
+        foreach (var old in Directory.GetFiles(folder, "avatar-foto.*"))
+        {
+            try { File.Delete(old); } catch (Exception) { }
+        }
+        var target = System.IO.Path.Combine(folder, "avatar-foto" + System.IO.Path.GetExtension(source).ToLowerInvariant());
+        File.Copy(source, target, overwrite: true);
+        return target;
+    }
+
+    /// <summary>Mostra o avatar numa imagem; se for animado, a animação roda sem parar.</summary>
+    public static void Show(Image image, Avatar? avatar)
+    {
+        image.BeginAnimation(Image.SourceProperty, null);
+        image.Source = avatar?.Image;
+        if (avatar?.Frames is not { Count: > 1 } frames || !Tools.Anim.Enabled) return;
+        var anim = new ObjectAnimationUsingKeyFrames
+        {
+            Duration = TimeSpan.FromMilliseconds(frames.Count * avatar.FrameMs),
+            RepeatBehavior = RepeatBehavior.Forever,
+        };
+        for (var i = 0; i < frames.Count; i++)
+            anim.KeyFrames.Add(new DiscreteObjectKeyFrame(frames[i], KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * avatar.FrameMs))));
+        image.BeginAnimation(Image.SourceProperty, anim);
+    }
+
+    /// <summary>Uma imagem pronta do avatar (animada, se for o caso).</summary>
+    public static Image View(Avatar avatar, double size)
+    {
+        var image = new Image { Width = size, Height = size, Stretch = Stretch.Uniform };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+        Show(image, avatar);
+        return image;
+    }
 
     private static IReadOnlyList<Avatar> Build() => new List<Avatar>
     {
@@ -34,7 +135,265 @@ public static class Avatars
         new("fantasma", "Fantasminha", "Desenho de terror fofo", Ghost()),
         new("raposa", "Raposa", "Anime", Fox()),
         new("zumbi", "Zumbi Fofo", "Jogo de zumbi", Zombie()),
+        AnimatedAvatar("pinguim", "Pinguim", "Animado · acenando", Penguin),
+        AnimatedAvatar("fantasma-voa", "Fantasma Voador", "Animado · flutuando", FloatingGhost),
+        AnimatedAvatar("foguete", "Foguete", "Animado · decolando", Rocket),
+        AnimatedAvatar("planeta", "Planetinha", "Animado · lua girando", Planet),
+        AnimatedAvatar("robo-pisca", "Robô Pisca", "Animado · piscando", BlinkRobot),
+        AnimatedAvatar("gatinho", "Gatinho Soneca", "Animado · dormindo", SleepyCat),
+        AnimatedAvatar("slime", "Slime", "Animado · pulando", Slime),
+        AnimatedAvatar("sol", "Solzinho", "Animado · brilhando", Sun),
+        AnimatedAvatar("coracao", "Coração", "Animado · batendo", Heart),
+        AnimatedAvatar("peixe", "Peixinho", "Animado · nadando", Fish),
     };
+
+    // ---------- Avatares animados (quadros desenhados com t de 0 a 1) ----------
+
+    private const int FrameCount = 16;
+
+    private static Avatar AnimatedAvatar(string id, string name, string hint, Func<double, ImageSource> frame)
+    {
+        var frames = Enumerable.Range(0, FrameCount).Select(i => frame(i / (double)FrameCount)).ToList();
+        return new Avatar(id, name, hint, frames[0]) { Frames = frames, FrameMs = 85 };
+    }
+
+    private static double Wave(double t, double phase = 0) => Math.Sin((t + phase) * 2 * Math.PI);
+
+    private static void Group(DrawingGroup g, Transform transform, Action<DrawingGroup> paint)
+    {
+        var sub = new DrawingGroup { Transform = transform };
+        paint(sub);
+        g.Children.Add(sub);
+    }
+
+    private static ImageSource Penguin(double t) => Draw("#38BDF8", g =>
+    {
+        Ellipse(g, "#E0F2FE", 50, 92, 34, 8);
+        // Asa direita acenando.
+        Group(g, new RotateTransform(-35 + 30 * Wave(t), 70, 58), w => Ellipse(w, "#0F172A", 80, 58, 7, 16));
+        Ellipse(g, "#0F172A", 22, 64, 6, 14);
+        Ellipse(g, "#0F172A", 50, 58, 27, 32);
+        Ellipse(g, "#F8FAFC", 50, 64, 18, 24);
+        Circle(g, "#FFFFFF", 41, 44, 6);
+        Circle(g, "#FFFFFF", 59, 44, 6);
+        Circle(g, "#0F172A", 42, 45, 3);
+        Circle(g, "#0F172A", 58, 45, 3);
+        Path(g, "#F59E0B", "M 44,52 L 56,52 L 50,60 Z");
+        Ellipse(g, "#F59E0B", 40, 90, 7, 3);
+        Ellipse(g, "#F59E0B", 60, 90, 7, 3);
+        Ellipse(g, "#F9A8D4", 35, 54, 4, 2.5, 0.8);
+        Ellipse(g, "#F9A8D4", 65, 54, 4, 2.5, 0.8);
+    });
+
+    private static ImageSource FloatingGhost(double t) => Draw("#312E81", g =>
+    {
+        foreach (var (x, y) in new[] { (18.0, 20.0), (82.0, 26.0), (14.0, 70.0), (86.0, 74.0) })
+            Circle(g, "#FFFFFF", x, y, 1.2 + 0.6 * (Wave(t, x / 100) + 1) / 2);
+        var dy = 5 * Wave(t);
+        Ellipse(g, "#1E1B4B", 50, 92, 18 - dy, 3.5, 0.6);
+        var blink = t is > 0.55 and < 0.62;
+        Group(g, new TranslateTransform(0, dy), b =>
+        {
+            Path(b, "#F8FAFC", "M 26,80 L 26,46 C 26,28 38,20 50,20 C 62,20 74,28 74,46 L 74,80 Q 70,74 66,80 Q 62,86 58,80 Q 54,74 50,80 Q 46,86 42,80 Q 38,74 34,80 Q 30,86 26,80 Z");
+            if (blink)
+            {
+                Rect(b, "#1E1B4B", 37, 47, 9, 2, 1);
+                Rect(b, "#1E1B4B", 54, 47, 9, 2, 1);
+            }
+            else
+            {
+                Ellipse(b, "#1E1B4B", 41, 47, 4, 5.5);
+                Ellipse(b, "#1E1B4B", 59, 47, 4, 5.5);
+                Circle(b, "#FFFFFF", 42.5, 45, 1.5);
+                Circle(b, "#FFFFFF", 60.5, 45, 1.5);
+            }
+            Ellipse(b, "#F9A8D4", 34, 57, 4.5, 2.6, 0.8);
+            Ellipse(b, "#F9A8D4", 66, 57, 4.5, 2.6, 0.8);
+            Path(b, null, "M 45,60 Q 50,65 55,60", 1, "#1E1B4B", 2.2);
+        });
+    });
+
+    private static ImageSource Rocket(double t) => Draw("#0B1026", g =>
+    {
+        // Estrelas descendo (sensação de subida).
+        foreach (var (x, y0) in new[] { (16.0, 0.0), (30.0, 0.35), (76.0, 0.15), (86.0, 0.6), (60.0, 0.8), (22.0, 0.7) })
+        {
+            var y = (y0 + t) % 1 * 110 - 5;
+            Rect(g, "#FFFFFF", x, y, 1.4, 5, 0.7);
+        }
+        var shake = 1.2 * Wave(t * 4);
+        Group(g, new TranslateTransform(shake, 0), r =>
+        {
+            var flame = 10 + 5 * (Wave(t * 3) + 1) / 2;
+            Path(r, "#F97316", FormattableString.Invariant($"M 42,72 Q 50,{72 + flame * 2.2:0.##} 58,72 Z"));
+            Path(r, "#FDE047", FormattableString.Invariant($"M 45,72 Q 50,{72 + flame * 1.4:0.##} 55,72 Z"));
+            Path(r, "#EF4444", "M 36,70 L 40,54 L 40,72 Z");
+            Path(r, "#EF4444", "M 64,70 L 60,54 L 60,72 Z");
+            Path(r, "#F1F5F9", "M 50,14 C 62,24 62,44 60,72 L 40,72 C 38,44 38,24 50,14 Z");
+            Path(r, "#EF4444", "M 50,14 C 56,19 59,25 60,31 L 40,31 C 41,25 44,19 50,14 Z");
+            Circle(r, "#334155", 50, 46, 7);
+            Circle(r, "#38BDF8", 50, 46, 5);
+            Circle(r, "#FFFFFF", 48, 44, 1.5);
+        });
+    });
+
+    private static ImageSource Planet(double t) => Draw("#0F172A", g =>
+    {
+        foreach (var (x, y) in new[] { (14.0, 18.0), (84.0, 14.0), (88.0, 80.0), (12.0, 82.0), (70.0, 90.0) })
+            Circle(g, "#FFFFFF", x, y, 1.1);
+        var a = t * 2 * Math.PI;
+        var mx = 50 + 36 * Math.Cos(a);
+        var my = 50 + 13 * Math.Sin(a);
+        var behind = Math.Sin(a) < 0;
+        if (behind) Circle(g, "#CBD5E1", mx, my, 5);
+        Path(g, null, "M 14,56 C 14,44 86,44 86,56", 1, "#FBBF24", 3);
+        Circle(g, "#A855F7", 50, 50, 22);
+        Path(g, "#C084FC", "M 32,42 Q 50,36 68,42 L 70,48 Q 50,42 30,48 Z", 0.8);
+        Path(g, "#7E22CE", "M 30,56 Q 50,62 70,56 L 68,62 Q 50,66 32,62 Z", 0.7);
+        Circle(g, "#0F172A", 43, 50, 2.2);
+        Circle(g, "#0F172A", 57, 50, 2.2);
+        Path(g, null, "M 46,56 Q 50,59 54,56", 1, "#0F172A", 1.8);
+        Path(g, null, "M 14,56 C 14,68 86,68 86,56", 1, "#FBBF24", 3);
+        if (!behind) Circle(g, "#E2E8F0", mx, my, 5);
+    });
+
+    private static ImageSource BlinkRobot(double t) => Draw("#6366F1", g =>
+    {
+        var glow = 0.4 + 0.6 * (Wave(t) + 1) / 2;
+        Line(g, "#475569", 3, 50, 30, 50, 16);
+        Ellipse(g, "#FDE047", 50, 14, 7 * glow + 2, 7 * glow + 2, 0.35);
+        Circle(g, "#FDE047", 50, 14, 4.5);
+        Rect(g, "#94A3B8", 14, 46, 8, 16, 3);
+        Rect(g, "#94A3B8", 78, 46, 8, 16, 3);
+        Rect(g, "#F1F5F9", 21, 30, 58, 50, 16);
+        Rect(g, "#1E293B", 28, 38, 44, 26, 10);
+        var blink = t is > 0.8 and < 0.9;
+        var look = 3 * Wave(t * 0.5);
+        if (blink)
+        {
+            Rect(g, "#34D399", 34, 50, 12, 3, 1.5);
+            Rect(g, "#34D399", 54, 50, 12, 3, 1.5);
+        }
+        else
+        {
+            Rect(g, "#34D399", 34 + look, 44, 12, 14, 5);
+            Rect(g, "#34D399", 54 + look, 44, 12, 14, 5);
+        }
+        Path(g, null, "M 40,71 Q 50,77 60,71", 1, "#6366F1", 3);
+    });
+
+    private static ImageSource SleepyCat(double t) => Draw("#1E3A8A", g =>
+    {
+        Circle(g, "#FDE68A", 80, 20, 8);
+        Circle(g, "#1E3A8A", 84, 17, 7);
+        var breathe = 1 + 0.04 * Wave(t);
+        Group(g, new ScaleTransform(breathe, breathe, 50, 80), c =>
+        {
+            Path(c, "#FB923C", "M 74,80 C 92,78 92,60 82,58 C 88,64 86,74 72,74 Z");
+            Ellipse(c, "#FB923C", 52, 72, 30, 16);
+            Path(c, "#FB923C", "M 24,58 L 28,40 L 38,52 Z");
+            Path(c, "#FB923C", "M 50,58 L 46,40 L 36,52 Z");
+            Circle(c, "#FB923C", 37, 62, 15);
+            Path(c, null, "M 28,62 Q 32,65 35,62", 1, "#7C2D12", 1.8);
+            Path(c, null, "M 39,62 Q 43,65 46,62", 1, "#7C2D12", 1.8);
+            Path(c, "#F472B6", "M 35,67 L 39,67 L 37,69 Z");
+        });
+        // "Zzz" subindo e sumindo.
+        for (var i = 0; i < 2; i++)
+        {
+            var p = (t + i * 0.5) % 1;
+            var x = 56 + p * 14;
+            var y = 42 - p * 26;
+            var size = 5 + p * 4;
+            Group(g, new TranslateTransform(x, y), z =>
+                z.Children.Add(new DrawingGroup
+                {
+                    Opacity = 1 - p,
+                    Children = { new GeometryDrawing(null, new Pen(Brush("#FFFFFF"), 1.8) { LineJoin = PenLineJoin.Round },
+                        Geometry.Parse(FormattableString.Invariant($"M 0,0 L {size:0.##},0 L 0,{size:0.##} L {size:0.##},{size:0.##}"))) },
+                }));
+        }
+    });
+
+    private static ImageSource Slime(double t) => Draw("#FCE7F3", g =>
+    {
+        // Pula: sobe e desce, achata ao tocar o chão e estica no ar.
+        var h = Math.Abs(Math.Sin(t * Math.PI));
+        var y = -26 * h;
+        var squash = h < 0.15 ? 1 - (0.15 - h) * 1.6 : 1 + 0.08 * h;
+        var sx = 1 / squash;
+        Ellipse(g, "#F9A8D4", 50, 88, 24 * (1 - 0.5 * h), 4, 0.7);
+        Group(g, new TransformGroup { Children = { new ScaleTransform(sx, squash, 50, 86), new TranslateTransform(0, y) } }, s =>
+        {
+            Path(s, "#22C55E", "M 22,86 C 20,60 34,42 50,42 C 66,42 80,60 78,86 Z");
+            Path(s, "#86EFAC", "M 30,62 C 32,52 40,48 46,48 C 40,52 36,56 34,64 Z", 0.9);
+            Circle(s, "#14532D", 42, 64, 3.6);
+            Circle(s, "#14532D", 58, 64, 3.6);
+            Circle(s, "#FFFFFF", 43, 63, 1.2);
+            Circle(s, "#FFFFFF", 59, 63, 1.2);
+            Path(s, null, "M 46,72 Q 50,76 54,72", 1, "#14532D", 2);
+        });
+    });
+
+    private static ImageSource Sun(double t) => Draw("#38BDF8", g =>
+    {
+        Group(g, new RotateTransform(t * 45, 50, 50), r =>
+        {
+            for (var i = 0; i < 12; i++)
+            {
+                var a = i * Math.PI / 6;
+                var len = i % 2 == 0 ? 42 : 36;
+                Line(r, "#FDE047", 5, 50 + 28 * Math.Cos(a), 50 + 28 * Math.Sin(a), 50 + len * Math.Cos(a), 50 + len * Math.Sin(a));
+            }
+        });
+        var pulse = 22 + 1.2 * Wave(t * 2);
+        Circle(g, "#FACC15", 50, 50, pulse);
+        Circle(g, "#FDE047", 50, 50, pulse - 4);
+        Path(g, null, "M 38,48 Q 42,44 46,48", 1, "#92400E", 2.2);
+        Path(g, null, "M 54,48 Q 58,44 62,48", 1, "#92400E", 2.2);
+        Path(g, null, "M 42,57 Q 50,64 58,57", 1, "#92400E", 2.4);
+        Ellipse(g, "#FB923C", 37, 55, 4, 2.5, 0.7);
+        Ellipse(g, "#FB923C", 63, 55, 4, 2.5, 0.7);
+    });
+
+    private static ImageSource Heart(double t) => Draw("#FFE4E6", g =>
+    {
+        // Batida dupla: tum-tum, pausa.
+        var beat = t < 0.12 ? Math.Sin(t / 0.12 * Math.PI) : t is > 0.2 and < 0.32 ? 0.7 * Math.Sin((t - 0.2) / 0.12 * Math.PI) : 0;
+        var s = 1 + 0.14 * beat;
+        Group(g, new ScaleTransform(s, s, 50, 54), h =>
+        {
+            Path(h, "#F43F5E", "M 50,82 C 22,62 16,46 24,34 C 32,24 46,26 50,38 C 54,26 68,24 76,34 C 84,46 78,62 50,82 Z");
+            Path(h, "#FDA4AF", "M 30,40 C 32,34 38,32 42,34 C 36,36 34,40 32,46 Z", 0.9);
+            Circle(h, "#4C0519", 42, 52, 3);
+            Circle(h, "#4C0519", 58, 52, 3);
+            Path(h, null, "M 46,59 Q 50,63 54,59", 1, "#4C0519", 2);
+        });
+    });
+
+    private static ImageSource Fish(double t) => Draw("#0EA5E9", g =>
+    {
+        // Bolhas subindo.
+        for (var i = 0; i < 3; i++)
+        {
+            var p = (t + i / 3.0) % 1;
+            Circle(g, "#E0F2FE", 26 + 6 * Wave(p, i * 0.3), 80 - p * 70, 2 + i * 0.8);
+        }
+        Path(g, "#0369A1", "M 0,92 Q 20,84 40,92 T 80,92 T 120,92 L 120,100 L 0,100 Z", 0.6);
+        var dy = 3 * Wave(t);
+        var tail = 10 * Wave(t * 2);
+        Group(g, new TranslateTransform(0, dy), f =>
+        {
+            Group(f, new RotateTransform(tail, 70, 52), tl => Path(tl, "#F97316", "M 68,52 L 88,38 Q 84,52 88,66 Z"));
+            Ellipse(f, "#FB923C", 50, 52, 24, 17);
+            Path(f, "#FDBA74", "M 42,38 Q 50,28 60,38 Z");
+            Path(f, "#FFFFFF", "M 52,37 Q 56,52 52,67 L 48,67 Q 52,52 48,37 Z", 0.8);
+            Circle(f, "#FFFFFF", 38, 48, 5.5);
+            Circle(f, "#0F172A", 37, 48, 3);
+            Circle(f, "#FFFFFF", 36, 46.5, 1);
+            Path(f, null, "M 28,56 Q 31,59 34,56", 1, "#7C2D12", 1.8);
+        });
+    });
 
     // ---------- Desenhos (tela de 100 × 100) ----------
 

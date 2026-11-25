@@ -661,7 +661,7 @@ public partial class MainWindow : Window
         var avatar = Services.Avatars.Find(_settings.Avatar);
         _hasAvatar = avatar is not null;
 
-        HandleAvatar.Source = avatar?.Image;
+        Services.Avatars.Show(HandleAvatar, avatar);
         HandleAvatar.Visibility = _hasAvatar ? Visibility.Visible : Visibility.Collapsed;
         HandleAvatar.Width = HandleAvatar.Height = _handleHasText ? 24 : AvatarSize;
 
