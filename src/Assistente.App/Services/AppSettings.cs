@@ -202,10 +202,10 @@ public sealed class AppSettings
     /// <summary>Em qual tela: "principal", "todas" ou o nome da tela do Windows (\\.\DISPLAY2).</summary>
     public string DesktopWidgetScreen { get; set; } = "principal";
 
-    /// <summary>Fundo do widget: "vidro" (liquid glass) ou "solido".</summary>
+    /// <summary>Fundo do widget: "vidro" (liquid glass), "solido" ou "nenhum" (só os atalhos, direto no papel de parede).</summary>
     public string DesktopWidgetBackground { get; set; } = "vidro";
 
-    /// <summary>Atalhos do widget: "vidro" (liquid glass) ou "solido".</summary>
+    /// <summary>Atalhos do widget: "vidro" (liquid glass), "solido" ou "nenhum" (só o ícone, sem o quadrado).</summary>
     public string DesktopWidgetTiles { get; set; } = "vidro";
 
     /// <summary>Tamanho de cada atalho (DIPs).</summary>
@@ -299,4 +299,10 @@ public sealed class DesktopShortcut
 
     /// <summary>"app", "pasta" ou "site".</summary>
     public string Kind { get; set; } = "app";
+
+    /// <summary>Imagem escolhida pela pessoa no lugar do ícone (cópia guardada pelo Assistente). Null = ícone normal.</summary>
+    public string? Image { get; set; }
+
+    /// <summary>Cor do fundo do atalho: "#RRGGBB", "nenhum" (sem quadrado) ou null (automática, pela cor do ícone).</summary>
+    public string? Color { get; set; }
 }
